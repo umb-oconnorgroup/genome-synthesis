@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import List, Tuple
 
 import allel
 import numpy as np
@@ -6,6 +6,8 @@ import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 import torch
 from torch.utils.data import Dataset
+
+from vcf_write import write_vcf
 
 
 class GenotypeDataset(Dataset):
@@ -53,14 +55,26 @@ class GenotypeDataset(Dataset):
         genotype = .5 * (genotype + 1)
         return genotype.char().numpy()
 
-    def write_vcf(self, genotypes: torch.FloatTensor, file_path: str) -> None:
-        # genotypes = self.decode_pos_neg(genotypes)
-        pass
+    def write_vcf(self, genotypes: torch.FloatTensor, samples: List[str], file_path: str) -> None:
+        genotypes = self.decode_pos_neg(genotypes)
+        callset = {
+            'calldata/GT': genotypes,
+            'samples': samples,
+            'variants/CHROM': np.repeat(self.chromosome, genotypes.shape[0]),
+            'variants/POS': self.snps.index.to_numpy(),
+            'variants/ID': np.array(['.' for i in range(genotypes.shape[0])], dtype=object),
+            'variants/REF': self.snps['REF'].to_numpy(),
+            'variants/ALT': self.snps['ALT'].to_numpy(),
+            'variants/QUAL': np.repeat(np.nan, genotypes.shape[0]).astype(np.float32),
+            'variants/FILTER_PASS': np.repeat(True, genotypes.shape[0])
+        }
+        write_vcf(file_path, callset)
 
 
 vcf_path = 'data/chr20_kgp_abridged.vcf'
 classification_map_path = 'data/classification_map.tsv'
 chromosome = 20
 dataset = GenotypeDataset(vcf_path, classification_map_path, chromosome)
+samples = ['Sample{}'.format(i) for i in range(dataset.genotypes.shape[1])]
 output_file_path = 'synthetic-data/chr{}.vcf'.format(chromosome)
-dataset.write_vcf(dataset.genotypes, output_file_path)
+dataset.write_vcf(dataset.genotypes, samples, output_file_path)
