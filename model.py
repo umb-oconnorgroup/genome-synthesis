@@ -243,6 +243,7 @@ class BaselineCVAE(nn.Module):
 
         self.relu = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
+        self.tanh = nn.Tanh()
 
         # BatchNorms
         self.use_batch_norm = use_batch_norm
@@ -287,6 +288,8 @@ class BaselineCVAE(nn.Module):
         else:
             h3 = _h3
         out = self.fc4(h3)
+
+        out = self.tanh(out)
 
         return out
 

@@ -4,13 +4,33 @@ import torch
 sse_loss = torch.nn.MSELoss(reduction='sum')
 
 
-def vae_loss(x: torch.FloatTensor, x_hat: torch.FloatTensor, mu: torch.FloatTensor, logvar: torch.FloatTensor):
-    sse = sse_loss(x_hat, x)
+def vae_loss(x: torch.FloatTensor, x_hat: torch.FloatTensor, mu: torch.FloatTensor, logvar: torch.FloatTensor) -> torch.FloatTensor:
+    reconstruction = reconstruction_loss(x, x_hat)
     kld = kld_loss(mu, logvar)
-    return sse + kld, sse, kld
+    return reconstruction + kld, reconstruction, kld
 
-def kld_loss(mu: torch.FloatTensor, logvar: torch.FloatTensor):
+def reconstruction_loss(x: torch.FloatTensor, x_hat: torch.FloatTensor) -> torch.FloatTensor:
+    likelihood = sse_loss(x_hat, x)
+    site_frequency = site_frequency_loss(x, x_hat)
+    return likelihood * (1 + site_frequency)
+
+def kld_loss(mu: torch.FloatTensor, logvar: torch.FloatTensor) -> torch.FloatTensor:
     return -0.5 * (1 + logvar - mu.pow(2) - logvar.exp()).sum()
+
+def site_frequency_loss(x: torch.FloatTensor, x_hat: torch.FloatTensor) -> torch.FloatTensor:
+    allele_freq = x.mean(0)
+    allele_freq_hat = x_hat.mean(0)
+    return distribution_profile_loss(allele_freq, allele_freq_hat)
+
+def distribution_profile_loss(x: torch.FloatTensor, x_hat: torch.FloatTensor) -> torch.FloatTensor:
+    x_mean, x_var, x_skew, x_kurt = profile_distribution(x)
+    x_hat_mean, x_hat_var, x_hat_skew, x_hat_kurt = profile_distribution(x_hat)
+    x_distribution = torch.cat([x_mean.unsqueeze(-1), x_var.sqrt().unsqueeze(-1), x_skew.pow(1. / 3.).unsqueeze(-1), x_kurt.pow(1. / 4.).unsqueeze(-1)], -1)
+    x_hat_distribution = torch.cat([x_hat_mean.unsqueeze(-1), x_hat_var.sqrt().unsqueeze(-1), x_hat_skew.sign() * x_hat_skew.abs().pow(1. / 3.).unsqueeze(-1), x_hat_kurt.pow(1. / 4.).unsqueeze(-1)], -1)
+    # print(x_distribution.detach())
+    # print(x_hat_distribution.detach())
+    # print(x_distribution.dist(x_hat_distribution).detach())
+    return x_distribution.dist(x_hat_distribution)
 
 def cov_loss(cov: torch.FloatTensor, x: torch.FloatTensor):
     pass
@@ -54,6 +74,18 @@ def corr_coef(m: torch.FloatTensor, rowvar: bool=True):
     covariance = cov(m, rowvar)
     correlation_coefficients = covariance / covariance.diag().unsqueeze(1).matmul(covariance.diag().unsqueeze(0)).sqrt()
     return correlation_coefficients
+
+def skew(x: torch.FloatTensor) -> torch.FloatTensor:
+    return ((x - x.mean()) / x.std()).pow(3).mean()
+
+def kurtosis(x: torch.FloatTensor) -> torch.FloatTensor:
+    return ((x - x.mean()) / x.std()).pow(4).mean()
+
+def profile_distribution(x: torch.FloatTensor) -> torch.FloatTensor:
+    return torch.cat([x.mean().unsqueeze(-1), x.var().unsqueeze(-1), skew(x).unsqueeze(-1), kurtosis(x).unsqueeze(-1)], -1)
+
+def hellinger(a: torch.FloatTensor, b: torch.FloatTensor) -> torch.FloatTensor:
+    return (1 / torch.tensor(2, dtype=torch.float).sqrt()) * a.sqrt().dist(b.sqrt())
 
 def linkage_disequilibrium_correlation(genotype: torch.FloatTensor) -> torch.FloatTensor:
     allele_prob = genotype.mean(0)

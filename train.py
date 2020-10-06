@@ -133,11 +133,11 @@ def main() -> None:
 def train(loader: DataLoader, model: torch.nn.Module, criterion: Callable, optimizer: Optimizer, epoch: int, args: ArgumentParser) -> None:
     batch_time = AverageMeter('Time', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
-    sse_losses = AverageMeter('SSE Loss', ':.4e')
+    reconstruction_losses = AverageMeter('Recon Loss', ':.4e')
     kld_losses = AverageMeter('KLD Loss', ':.4e')
     progress = ProgressMeter(
         len(loader),
-        [batch_time, losses, sse_losses, kld_losses],
+        [batch_time, losses, reconstruction_losses, kld_losses],
         prefix="Epoch: [{}]".format(epoch))
 
     model.train()
@@ -148,14 +148,14 @@ def train(loader: DataLoader, model: torch.nn.Module, criterion: Callable, optim
         genotypes = genotypes.to(device)
         labels = labels.to(device)
         reconstructed_genotypes, mu, logvar = model(genotypes, labels)
-        loss, sse, kld = criterion(genotypes, reconstructed_genotypes, mu, logvar)
+        loss, reconstruction, kld = criterion(genotypes, reconstructed_genotypes, mu, logvar)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
         losses.update(loss.item(), genotypes.shape[0])
         kld_losses.update(kld.item(), genotypes.shape[0])
-        sse_losses.update(sse.item(), genotypes.shape[0])
+        reconstruction_losses.update(reconstruction.item(), genotypes.shape[0])
         batch_time.update(time.time() - end)
         end = time.time()
 
@@ -165,11 +165,11 @@ def train(loader: DataLoader, model: torch.nn.Module, criterion: Callable, optim
 def validate(loader: DataLoader, model: torch.nn.Module, criterion: Callable, args: ArgumentParser) -> None:
     batch_time = AverageMeter('Time', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
-    sse_losses = AverageMeter('SSE Loss', ':.4e')
+    reconstruction_losses = AverageMeter('Recon Loss', ':.4e')
     kld_losses = AverageMeter('KLD Loss', ':.4e')
     progress = ProgressMeter(
         len(loader),
-        [batch_time, losses, sse_losses, kld_losses],
+        [batch_time, losses, reconstruction_losses, kld_losses],
         prefix='Test: ')
 
     model.eval()
@@ -180,11 +180,11 @@ def validate(loader: DataLoader, model: torch.nn.Module, criterion: Callable, ar
             genotypes = genotypes.to(device)
             labels = labels.to(device)
             reconstructed_genotypes, mu, logvar = model(genotypes, labels)
-            loss, sse, kld = criterion(genotypes, reconstructed_genotypes, mu, logvar)
+            loss, reconstruction, kld = criterion(genotypes, reconstructed_genotypes, mu, logvar)
 
             losses.update(loss.item(), genotypes.shape[0])
             kld_losses.update(kld.item(), genotypes.shape[0])
-            sse_losses.update(sse.item(), genotypes.shape[0])
+            reconstruction_losses.update(reconstruction.item(), genotypes.shape[0])
             batch_time.update(time.time() - end)
             end = time.time()
 
