@@ -6,6 +6,7 @@ import random
 import torch
 import torch.backends.cudnn as cudnn
 
+from loss import cov
 from model import WindowedModel
 from train import WINDOW_SIZE
 from utils import get_device
@@ -24,10 +25,12 @@ parser.add_argument('-g', '--gpu', action='store_true',
                     help='use gpu (only supports single gpu)')
 parser.add_argument('-s', '--seed', type=int, default=None,
                     help='random seed for reproducibility')
-parser.add_argument('-n', '--num-samples', type=int, default=128,
+parser.add_argument('-n', '--num-samples', type=int, default=100,
                     help='number of diploids to generate')
 parser.add_argument('-b', '--batch-size', type=int, default=256,
                     help='training data batch size')
+parser.add_argument('--diversity-multiplier', type=int, default=3,
+                    help='the most diverse num-samples will be chosen from num-samples multiplied by this number')
 
 
 def main() -> None:
@@ -60,7 +63,7 @@ def main() -> None:
     model.to(device)
 
     genotypes = []
-    num_haploids = 2 * args.num_samples
+    num_haploids = 2 * args.num_samples * args.diversity_multiplier
     num_iterations = math.ceil(num_haploids / args.batch_size)
     label = torch.tensor(label_encoder.transform([args.population]))
 
@@ -78,6 +81,13 @@ def main() -> None:
 
     genotypes = torch.cat(genotypes, 0)
     genotypes = genotypes.sign()
+
+    if args.diversity_multiplier > 1:
+        covariance = cov(genotypes)
+        correlation_coefficients = covariance / covariance.diag().unsqueeze(1).matmul(covariance.diag().unsqueeze(0)).sqrt()
+        diverse_indices = correlation_coefficients.mean(1).argsort()[:args.num_samples * 2]
+        genotypes = genotypes[diverse_indices]
+
     genotypes = genotypes.T
     genotypes = genotypes.reshape(genotypes.shape[0], -1, 2)
 
