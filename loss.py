@@ -15,7 +15,7 @@ def kld_loss(mu: torch.FloatTensor, logvar: torch.FloatTensor):
 def cov_loss(cov: torch.FloatTensor, x: torch.FloatTensor):
     pass
 
-def cov(m, rowvar=True, inplace=False):
+def cov(m: torch.FloatTensor, rowvar: bool=True, inplace: bool=False):
     '''Estimate a covariance matrix given data.
 
     Covariance indicates the level to which two variables vary together.
@@ -49,6 +49,11 @@ def cov(m, rowvar=True, inplace=False):
         m = m - torch.mean(m, dim=1, keepdim=True)
     mt = m.t()  # if complex: mt = m.t().conj()
     return fact * m.matmul(mt).squeeze()
+
+def corr_coef(m: torch.FloatTensor, rowvar: bool=True):
+    covariance = cov(m, rowvar)
+    correlation_coefficients = covariance / covariance.diag().unsqueeze(1).matmul(covariance.diag().unsqueeze(0)).sqrt()
+    return correlation_coefficients
 
 def linkage_disequilibrium_correlation(genotype: torch.FloatTensor) -> torch.FloatTensor:
     allele_prob = genotype.mean(0)
