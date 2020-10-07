@@ -223,6 +223,75 @@ class CVAE(nn.Module):
         return self.decode(z, c), mu, logvar
 
 
+class CHVAE(nn.Module):
+    """docstring for CHVAE"""
+    def __init__(self, feature_size, latent_size, class_size, hidden_size_1=400, hidden_size_2=200):
+        super(CHVAE, self).__init__()
+        self.feature_size = feature_size
+        self.latent_size = latent_size
+        self.class_size = class_size
+        self.hidden_size_1 = hidden_size_1
+        self.hidden_size_2 = hidden_size_2
+
+        self.fc1 = nn.Linear(feature_size + class_size, hidden_size_1)
+        self.bn1 = nn.BatchNorm1d(hidden_size_1)
+        self.fc2 = nn.Linear(hidden_size_1, hidden_size_2 + latent_size)
+        self.bn2 = nn.BatchNorm1d(hidden_size_2)
+        self.fc3 = nn.Linear(hidden_size_2, latent_size)
+
+        self.fc4 = nn.Linear(latent_size // 2 + class_size, hidden_size_2)
+        self.bn4 = nn.BatchNorm1d(hidden_size_2)
+        self.fc5 = nn.Linear(hidden_size_2 + latent_size // 2, hidden_size_1)
+        self.bn5 = nn.BatchNorm1d(hidden_size_1)
+        self.fc6 = nn.Linear(hidden_size_1, feature_size)
+
+        self.activation = nn.ReLU()
+
+    def encode(self, x, c):
+        hidden = torch.cat([x, c], 1)
+        hidden = self.fc1(hidden)
+        hidden = self.activation(hidden)
+        hidden = self.bn1(hidden)
+        hidden = self.fc2(hidden)
+        hidden, z1 = self.activation(hidden).split([self.hidden_size_2, self.latent_size], 1)
+        hidden = self.bn2(hidden)
+        z2 = self.fc3(hidden)
+
+        z1_mu, z1_var = z1.split(self.latent_size // 2, 1)
+        z2_mu, z2_var = z2.split(self.latent_size // 2, 1)
+        z_mu = torch.cat([z1_mu, z2_mu], 1)
+        z_var = torch.cat([z1_var, z2_var], 1)
+        return z_mu, z_var
+
+    def reparametrize(self, mu, logvar):
+        if self.training:
+            std = logvar.mul(0.5).exp_()
+            eps = torch.randn_like(std)
+            return eps * std + mu
+        else:
+            return mu
+
+    def decode(self, z, c):
+        z1, z2 = z.split(self.latent_size // 2, 1)
+        hidden = torch.cat([z2, c], 1)
+        hidden = self.fc4(hidden)
+        hidden = self.activation(hidden)
+        hidden = self.bn4(hidden)
+        hidden = torch.cat([hidden, z1], 1)
+        hidden = self.fc5(hidden)
+        hidden = self.activation(hidden)
+        hidden = self.bn5(hidden)
+        hidden = self.fc6(hidden)
+        return hidden
+
+    def forward(self, x, c):
+        # one hot encode c
+        c = nn.functional.one_hot(c, self.class_size)
+        mu, logvar = self.encode(x, c)
+        z = self.reparametrize(mu, logvar)
+        return self.decode(z, c), mu, logvar
+
+
 class BaselineCVAE(nn.Module):
     def __init__(self, feature_size, latent_size, class_size, hidden_size=400, use_batch_norm=False):
         super(BaselineCVAE, self).__init__()
@@ -312,7 +381,7 @@ class WindowedModel(nn.Module):
             self.models.append(model)
 
     def decode(self, z, c):
-        if isinstance(self.models[0], BaselineCVAE):
+        if isinstance(self.models[0], BaselineCVAE) or isinstance(self.models[0], CHVAE):
             c = nn.functional.one_hot(c, self.models[0].class_size)
         decoded_xs = []
         for i, (z_i, model) in enumerate(zip(z.split(z.shape[1] // len(self.models), 1), self.models)):

@@ -18,7 +18,9 @@ def reconstruction_loss(x: torch.FloatTensor, logits: torch.FloatTensor, window_
     # sum across variants and mean across batch
     likelihood = bcel_loss(logits, x).sum(1).mean()
     # site_frequency = site_frequency_loss(x, logits)
-    # ld = linkage_disequilibrium_loss(x, logits, window_size)
+    ld = linkage_disequilibrium_loss(x, logits, window_size)
+    # print(site_frequency.detach())
+    # print(ld.detach())
     return likelihood
     # return likelihood * (1 + site_frequency + ld)
 

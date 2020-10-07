@@ -26,9 +26,9 @@ def main() -> None:
     genotypes1 = genotypes1[shared_position_indices1]
     genotypes2 = genotypes2[shared_position_indices2]
 
-    # sfs1 = site_frequency_spectrum(genotypes1)
-    # sfs2 = site_frequency_spectrum(genotypes2)
-    # joint_site_frequency_spectrum(genotypes1, genotypes2)
+    sfs1 = site_frequency_spectrum(genotypes1)
+    sfs2 = site_frequency_spectrum(genotypes2)
+    joint_site_frequency_spectrum(genotypes1, genotypes2)
 
     linkage_disequilibrium(positions1, genotypes1)
     linkage_disequilibrium(positions2, genotypes2)
@@ -72,9 +72,7 @@ def linkage_disequilibrium(positions: np.array, genotypes: np.ndarray, window_si
         }
         windows.append(summary)
     print(windows)
-    # n_alt = allel.GenotypeArray(genotypes, dtype='i1').to_n_alt(fill=-1)
-    # windowed_r_squared = allel.windowed_r_squared(positions, n_alt, size=window_size)
-    # print(windowed_r_squared)
+
 
 if __name__ == '__main__':
     main()

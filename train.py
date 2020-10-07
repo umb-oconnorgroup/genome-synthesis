@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 
 from data import BatchByLabelRandomSampler, VCFReader
 from loss import vae_loss as loss_function
-from model import BaselineCVAE, CVAE, WindowedModel
+from model import BaselineCVAE, CHVAE, CVAE, WindowedModel
 from utils import AverageMeter, ProgressMeter, get_device, save_checkpoint
 
 
@@ -35,7 +35,7 @@ parser.add_argument('-r', '--resume_path', type=str, default=None,
                     help='path to model from which you would like to resume')
 parser.add_argument('-g', '--gpu', action='store_true',
                     help='use gpu (only supports single gpu)')
-parser.add_argument('-e', '--epochs', type=int, default=10,
+parser.add_argument('-e', '--epochs', type=int, default=20,
                     help='number of training epochs to run')
 parser.add_argument('-s', '--seed', type=int, default=None,
                     help='random seed for reproducibility')
@@ -84,8 +84,10 @@ def main() -> None:
 
     # model_class = CVAE
     # kwargs = {'latent': args.latent_size, 'num_classes': len(vcf_reader.label_encoder.classes_), 'feature_size': WINDOW_SIZE}
-    model_class = BaselineCVAE
-    kwargs = {'feature_size': WINDOW_SIZE, 'latent_size': args.latent_size, 'class_size': len(vcf_reader.label_encoder.classes_), 'hidden_size': 100, 'use_batch_norm': True}
+    # model_class = BaselineCVAE
+    # kwargs = {'feature_size': WINDOW_SIZE, 'latent_size': args.latent_size, 'class_size': len(vcf_reader.label_encoder.classes_), 'hidden_size': 200, 'use_batch_norm': True}
+    model_class = CHVAE
+    kwargs = {'feature_size': WINDOW_SIZE, 'latent_size': args.latent_size, 'class_size': len(vcf_reader.label_encoder.classes_), 'hidden_size_1': 400, 'hidden_size_2': 200}
 
     model = WindowedModel(model_class, vcf_reader.snps.shape[0], WINDOW_SIZE, **kwargs)
     model.to(get_device(args))
