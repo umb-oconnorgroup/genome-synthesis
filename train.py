@@ -150,7 +150,7 @@ def train(loader: DataLoader, model: torch.nn.Module, criterion: Callable, optim
         genotypes = genotypes.to(device)
         labels = labels.to(device)
         logits, mu, logvar = model(genotypes, labels)
-        loss, reconstruction, kld = criterion(genotypes, logits, mu, logvar)
+        loss, reconstruction, kld = criterion(genotypes, logits, mu, logvar, WINDOW_SIZE)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -182,7 +182,7 @@ def validate(loader: DataLoader, model: torch.nn.Module, criterion: Callable, ar
             genotypes = genotypes.to(device)
             labels = labels.to(device)
             logits, mu, logvar = model(genotypes, labels)
-            loss, reconstruction, kld = criterion(genotypes, logits, mu, logvar)
+            loss, reconstruction, kld = criterion(genotypes, logits, mu, logvar, WINDOW_SIZE)
 
             losses.update(loss.item(), genotypes.shape[0])
             kld_losses.update(kld.item(), genotypes.shape[0])

@@ -6,7 +6,7 @@ import random
 import torch
 import torch.backends.cudnn as cudnn
 
-from loss import corr_coef
+from loss import squared_corr_coef
 from model import WindowedModel
 from train import WINDOW_SIZE
 from utils import get_device
@@ -85,8 +85,8 @@ def main() -> None:
         genotypes = genotypes * 2 - 1
 
     if args.diversity_multiplier > 1:
-        correlation_coefficients = corr_coef(genotypes)
-        diverse_indices = correlation_coefficients.mean(1).argsort()[:args.num_samples * 2]
+        squared_correlation_coefficients = squared_corr_coef(genotypes)
+        diverse_indices = squared_correlation_coefficients.mean(1).argsort()[:args.num_samples * 2]
         genotypes = genotypes[diverse_indices]
 
     genotypes = genotypes.T

@@ -1,3 +1,5 @@
+from typing import Tuple
+
 import torch
 
 
@@ -5,18 +7,20 @@ bcel_loss = torch.nn.BCEWithLogitsLoss(reduction='none')
 sigmoid = torch.nn.Sigmoid()
 
 
-def vae_loss(x: torch.FloatTensor, logits: torch.FloatTensor, mu: torch.FloatTensor, logvar: torch.FloatTensor) -> torch.FloatTensor:
-    reconstruction = reconstruction_loss(x, logits)
+def vae_loss(x: torch.FloatTensor, logits: torch.FloatTensor, mu: torch.FloatTensor, logvar: torch.FloatTensor, window_size: int) -> torch.FloatTensor:
+    reconstruction = reconstruction_loss(x, logits, window_size)
     kld = kld_loss(mu, logvar)
     return reconstruction + kld, reconstruction, kld
 
-def reconstruction_loss(x: torch.FloatTensor, logits: torch.FloatTensor) -> torch.FloatTensor:
+def reconstruction_loss(x: torch.FloatTensor, logits: torch.FloatTensor, window_size: int) -> torch.FloatTensor:
     # return x to 0 and 1 encoding
     x = ((x + 1) * (.5)).round()
     # sum across variants and mean across batch
     likelihood = bcel_loss(logits, x).sum(1).mean()
-    site_frequency = site_frequency_loss(x, logits)
-    return likelihood * (1 + site_frequency)
+    # site_frequency = site_frequency_loss(x, logits)
+    # ld = linkage_disequilibrium_loss(x, logits, window_size)
+    return likelihood
+    # return likelihood * (1 + site_frequency + ld)
 
 def kld_loss(mu: torch.FloatTensor, logvar: torch.FloatTensor) -> torch.FloatTensor:
     return (-0.5 * (1 + logvar - mu.pow(2) - logvar.exp()).sum(1)).mean()
@@ -37,10 +41,33 @@ def site_frequency_loss(x: torch.FloatTensor, logits: torch.FloatTensor) -> torc
     _, x_hat_var, x_hat_skew, x_hat_kurt = profile_distribution(allele_freq_hat)
     x_hat_distribution = torch.cat([x_hat_mean.unsqueeze(-1), x_hat_var.unsqueeze(-1), x_hat_skew.sign() * x_hat_skew.abs().pow(1. / 3.).unsqueeze(-1), x_hat_kurt.pow(1. / 4.).unsqueeze(-1)], -1)
 
+    # print(x_distribution.detach())
+    # print(x_hat_distribution.detach())
+    # print(x_distribution.dist(x_hat_distribution).detach())
+
     return x_distribution.dist(x_hat_distribution)
 
-def cov_loss(cov: torch.FloatTensor, x: torch.FloatTensor):
-    pass
+def linkage_disequilibrium_loss(x: torch.FloatTensor, logits: torch.FloatTensor, window_size: int) -> torch.FloatTensor:
+    windowed_r_squared = windowed_squared_corr_coef(x.T, window_size)
+    windowed_r_squared_hat = windowed_squared_corr_coef(logits.sigmoid().T, window_size)
+
+    ld_losses = []
+    for r_squared, r_squared_hat in zip(windowed_r_squared, windowed_r_squared_hat):
+        nan_indices = r_squared.isnan().logical_or(r_squared_hat.isnan())
+        non_nan_r_squared = r_squared[~nan_indices]
+        if len(non_nan_r_squared) == 0:
+            continue
+        non_nan_r_squared_hat = r_squared_hat[~nan_indices]
+        dist_of_mean = non_nan_r_squared.mean().dist(non_nan_r_squared_hat.mean())
+        dist_of_var = non_nan_r_squared.var().dist(non_nan_r_squared_hat.var())
+        ld_losses.append((dist_of_mean + dist_of_var).unsqueeze(0))
+
+    if len(ld_losses) == 0:
+        return 0
+
+    mean_ld_loss = torch.cat(ld_losses).mean()
+
+    return mean_ld_loss
 
 def cov(m: torch.FloatTensor, rowvar: bool=True, inplace: bool=False):
     '''Estimate a covariance matrix given data.
@@ -77,10 +104,13 @@ def cov(m: torch.FloatTensor, rowvar: bool=True, inplace: bool=False):
     mt = m.t()  # if complex: mt = m.t().conj()
     return fact * m.matmul(mt).squeeze()
 
-def corr_coef(m: torch.FloatTensor, rowvar: bool=True):
+def squared_corr_coef(m: torch.FloatTensor, rowvar: bool=True) -> torch.FloatTensor:
     covariance = cov(m, rowvar)
-    correlation_coefficients = covariance / covariance.diag().unsqueeze(1).matmul(covariance.diag().unsqueeze(0)).sqrt()
-    return correlation_coefficients
+    squared_correlation_coefficients = covariance.pow(2) / covariance.diag().unsqueeze(1).matmul(covariance.diag().unsqueeze(0))
+    return squared_correlation_coefficients
+
+def windowed_squared_corr_coef(m: torch.FloatTensor, window_size: int, rowvar: bool=True) -> Tuple[torch.FloatTensor, ...]:
+    return tuple([squared_corr_coef(window, rowvar).unsqueeze(0) for window in m.split(window_size)])
 
 def var(x: torch.FloatTensor, mean: torch.FloatTensor=None) -> torch.FloatTensor:
     if mean is None:
@@ -112,10 +142,9 @@ def linkage_disequilibrium_correlation(genotype: torch.FloatTensor) -> torch.Flo
     allele_prob_product[range(allele_prob_product.shape[0]), range(allele_prob_product.shape[1])] = allele_prob
     disequilibrium = joint_allele_prob - allele_prob_product
     intermediary_denominator_term = allele_prob * (1 - allele_prob)
-    correlation_denominator = intermediary_denominator_term.unsqueeze(-1).matmul(intermediary_denominator_term.unsqueeze(0)).sqrt()
-    correlation = disequilibrium / correlation_denominator
-    correlation[correlation.isnan()] = 0
-    return correlation
+    correlation_denominator = intermediary_denominator_term.unsqueeze(-1).matmul(intermediary_denominator_term.unsqueeze(0))
+    r_squared = disequilibrium.pow(2) / correlation_denominator
+    return r_squared
 
 # def linkage_disequilibrium_correlation(genotype: torch.FloatTensor) -> torch.FloatTensor:
 #     allele_prob = genotype.mean(0)
