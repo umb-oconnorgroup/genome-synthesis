@@ -22,15 +22,16 @@ def main() -> None:
     genotypes1 = genotypes1[shared_position_indices1]
     genotypes2 = genotypes2[shared_position_indices2]
 
-    site_frequency_spectrum(genotypes1)
-    site_frequency_spectrum(genotypes2)
+    sfs1 = site_frequency_spectrum(genotypes1)
+    sfs2 = site_frequency_spectrum(genotypes2)
     joint_site_frequency_spectrum(genotypes1, genotypes2)
 
-def site_frequency_spectrum(genotypes: np.ndarray) -> None:
+def site_frequency_spectrum(genotypes: np.ndarray) -> np.ndarray:
     allele_counts = genotypes.reshape(genotypes.shape[0], -1).sum(1)
     sfs = allel.sfs(allele_counts, np.product(genotypes.shape[1:]))
     ax = allel.plot_sfs(sfs)
     plt.show()
+    return sfs / sfs.sum()
 
 def joint_position_indices(positions1: np.array, positions2: np.array) -> Tuple[List[int], List[int]]:
     shared_positions = set(positions1).intersection(set(positions2))
@@ -38,7 +39,7 @@ def joint_position_indices(positions1: np.array, positions2: np.array) -> Tuple[
     shared_position_indices2 = [i for i in range(len(positions2)) if positions2[i] in shared_positions]
     return shared_position_indices1, shared_position_indices2
 
-def joint_site_frequency_spectrum(genotypes1: np.ndarray, genotypes2: np.ndarray) -> None:
+def joint_site_frequency_spectrum(genotypes1: np.ndarray, genotypes2: np.ndarray) -> np.ndarray:
 
     allele_counts1 = genotypes1.reshape(genotypes1.shape[0], -1).sum(1)
     allele_counts2 = genotypes2.reshape(genotypes2.shape[0], -1).sum(1)
@@ -46,6 +47,7 @@ def joint_site_frequency_spectrum(genotypes1: np.ndarray, genotypes2: np.ndarray
     joint_sfs = allel.joint_sfs(allele_counts1, allele_counts2, np.product(genotypes1.shape[1:]), np.product(genotypes2.shape[1:]))
     ax = allel.plot_joint_sfs(joint_sfs)
     plt.show()
+    return joint_sfs / joint_sfs.sum()
 
 if __name__ == '__main__':
     main()
