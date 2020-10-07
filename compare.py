@@ -39,8 +39,10 @@ def joint_position_indices(positions1: np.array, positions2: np.array) -> Tuple[
     return shared_position_indices1, shared_position_indices2
 
 def joint_site_frequency_spectrum(genotypes1: np.ndarray, genotypes2: np.ndarray) -> None:
+
     allele_counts1 = genotypes1.reshape(genotypes1.shape[0], -1).sum(1)
     allele_counts2 = genotypes2.reshape(genotypes2.shape[0], -1).sum(1)
+
     joint_sfs = allel.joint_sfs(allele_counts1, allele_counts2, np.product(genotypes1.shape[1:]), np.product(genotypes2.shape[1:]))
     ax = allel.plot_joint_sfs(joint_sfs)
     plt.show()

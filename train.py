@@ -39,7 +39,7 @@ parser.add_argument('-e', '--epochs', type=int, default=10,
                     help='number of training epochs to run')
 parser.add_argument('-s', '--seed', type=int, default=None,
                     help='random seed for reproducibility')
-parser.add_argument('-l', '--latent-size', type=int, default=10,
+parser.add_argument('-l', '--latent-size', type=int, default=20,
                     help='size of the latent space for each window')
 # parser.add_argument('-w', '--window-size', type=int, default=2048,
                     # help='size of the window that the snp positions are split into')
@@ -52,7 +52,7 @@ parser.add_argument('-t', '--validation-split', default=0.2, type=float,
 parser.add_argument('-v', '--validate', action='store_true',
                     help='only evaluate model on validation set')
 parser.add_argument('-p', '--print-freq', default=5, type=int,
-                    help='print frequency (default: 10)')
+                    help='print frequency (default: 5)')
 
 best_loss = np.inf
 
@@ -147,8 +147,8 @@ def train(loader: DataLoader, model: torch.nn.Module, criterion: Callable, optim
     for i, (genotypes, labels) in enumerate(loader):
         genotypes = genotypes.to(device)
         labels = labels.to(device)
-        reconstructed_genotypes, mu, logvar = model(genotypes, labels)
-        loss, reconstruction, kld = criterion(genotypes, reconstructed_genotypes, mu, logvar)
+        logits, mu, logvar = model(genotypes, labels)
+        loss, reconstruction, kld = criterion(genotypes, logits, mu, logvar)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -179,8 +179,8 @@ def validate(loader: DataLoader, model: torch.nn.Module, criterion: Callable, ar
             device = get_device(args)
             genotypes = genotypes.to(device)
             labels = labels.to(device)
-            reconstructed_genotypes, mu, logvar = model(genotypes, labels)
-            loss, reconstruction, kld = criterion(genotypes, reconstructed_genotypes, mu, logvar)
+            logits, mu, logvar = model(genotypes, labels)
+            loss, reconstruction, kld = criterion(genotypes, logits, mu, logvar)
 
             losses.update(loss.item(), genotypes.shape[0])
             kld_losses.update(kld.item(), genotypes.shape[0])

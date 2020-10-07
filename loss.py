@@ -1,35 +1,42 @@
 import torch
 
 
-sse_loss = torch.nn.MSELoss(reduction='sum')
+bcel_loss = torch.nn.BCEWithLogitsLoss(reduction='none')
+sigmoid = torch.nn.Sigmoid()
 
 
-def vae_loss(x: torch.FloatTensor, x_hat: torch.FloatTensor, mu: torch.FloatTensor, logvar: torch.FloatTensor) -> torch.FloatTensor:
-    reconstruction = reconstruction_loss(x, x_hat)
+def vae_loss(x: torch.FloatTensor, logits: torch.FloatTensor, mu: torch.FloatTensor, logvar: torch.FloatTensor) -> torch.FloatTensor:
+    reconstruction = reconstruction_loss(x, logits)
     kld = kld_loss(mu, logvar)
     return reconstruction + kld, reconstruction, kld
 
-def reconstruction_loss(x: torch.FloatTensor, x_hat: torch.FloatTensor) -> torch.FloatTensor:
-    likelihood = sse_loss(x_hat, x)
-    site_frequency = site_frequency_loss(x, x_hat)
+def reconstruction_loss(x: torch.FloatTensor, logits: torch.FloatTensor) -> torch.FloatTensor:
+    # return x to 0 and 1 encoding
+    x = ((x + 1) * (.5)).round()
+    # sum across variants and mean across batch
+    likelihood = bcel_loss(logits, x).sum(1).mean()
+    site_frequency = site_frequency_loss(x, logits)
     return likelihood * (1 + site_frequency)
 
 def kld_loss(mu: torch.FloatTensor, logvar: torch.FloatTensor) -> torch.FloatTensor:
-    return -0.5 * (1 + logvar - mu.pow(2) - logvar.exp()).sum()
+    return (-0.5 * (1 + logvar - mu.pow(2) - logvar.exp()).sum(1)).mean()
 
-def site_frequency_loss(x: torch.FloatTensor, x_hat: torch.FloatTensor) -> torch.FloatTensor:
+def site_frequency_loss(x: torch.FloatTensor, logits: torch.FloatTensor) -> torch.FloatTensor:
     allele_freq = x.mean(0)
-    allele_freq_hat = x_hat.mean(0)
-    return distribution_profile_loss(allele_freq, allele_freq_hat)
+    x_mean, x_var, x_skew, x_kurt = profile_distribution(allele_freq)
+    x_distribution = torch.cat([x_mean.unsqueeze(-1), x_var.unsqueeze(-1), x_skew.sign() * x_skew.pow(1. / 3.).unsqueeze(-1), x_kurt.pow(1. / 4.).unsqueeze(-1)], -1)
 
-def distribution_profile_loss(x: torch.FloatTensor, x_hat: torch.FloatTensor) -> torch.FloatTensor:
-    x_mean, x_var, x_skew, x_kurt = profile_distribution(x)
-    x_hat_mean, x_hat_var, x_hat_skew, x_hat_kurt = profile_distribution(x_hat)
-    x_distribution = torch.cat([x_mean.unsqueeze(-1), x_var.sqrt().unsqueeze(-1), x_skew.pow(1. / 3.).unsqueeze(-1), x_kurt.pow(1. / 4.).unsqueeze(-1)], -1)
-    x_hat_distribution = torch.cat([x_hat_mean.unsqueeze(-1), x_hat_var.sqrt().unsqueeze(-1), x_hat_skew.sign() * x_hat_skew.abs().pow(1. / 3.).unsqueeze(-1), x_hat_kurt.pow(1. / 4.).unsqueeze(-1)], -1)
-    # print(x_distribution.detach())
-    # print(x_hat_distribution.detach())
-    # print(x_distribution.dist(x_hat_distribution).detach())
+    # turn logits into probability values (mean of probs will be mean of approximated data)
+    probs = sigmoid(logits)
+    x_hat_mean = probs.mean(0).mean()
+
+    # turn logits into more extreme probability values to simulate sampling
+    x_hat = sigmoid(logits * 10)
+    allele_freq_hat = x_hat.mean(0)
+
+    _, x_hat_var, x_hat_skew, x_hat_kurt = profile_distribution(allele_freq_hat)
+    x_hat_distribution = torch.cat([x_hat_mean.unsqueeze(-1), x_hat_var.unsqueeze(-1), x_hat_skew.sign() * x_hat_skew.abs().pow(1. / 3.).unsqueeze(-1), x_hat_kurt.pow(1. / 4.).unsqueeze(-1)], -1)
+
     return x_distribution.dist(x_hat_distribution)
 
 def cov_loss(cov: torch.FloatTensor, x: torch.FloatTensor):
@@ -75,14 +82,25 @@ def corr_coef(m: torch.FloatTensor, rowvar: bool=True):
     correlation_coefficients = covariance / covariance.diag().unsqueeze(1).matmul(covariance.diag().unsqueeze(0)).sqrt()
     return correlation_coefficients
 
-def skew(x: torch.FloatTensor) -> torch.FloatTensor:
-    return ((x - x.mean()) / x.std()).pow(3).mean()
+def var(x: torch.FloatTensor, mean: torch.FloatTensor=None) -> torch.FloatTensor:
+    if mean is None:
+        mean = x.mean()
+    return (x.pow(2) - mean.pow(2)).sum() * (1 / (len(x) - 1))
 
-def kurtosis(x: torch.FloatTensor) -> torch.FloatTensor:
-    return ((x - x.mean()) / x.std()).pow(4).mean()
+def skew(x: torch.FloatTensor, mean: torch.FloatTensor=None) -> torch.FloatTensor:
+    if mean is None:
+        mean = x.mean()
+    return ((x - mean) / x.std()).pow(3).mean()
 
-def profile_distribution(x: torch.FloatTensor) -> torch.FloatTensor:
-    return torch.cat([x.mean().unsqueeze(-1), x.var().unsqueeze(-1), skew(x).unsqueeze(-1), kurtosis(x).unsqueeze(-1)], -1)
+def kurtosis(x: torch.FloatTensor, mean: torch.FloatTensor=None) -> torch.FloatTensor:
+    if mean is None:
+        mean = x.mean()
+    return ((x - mean) / x.std()).pow(4).mean()
+
+def profile_distribution(x: torch.FloatTensor, mean: torch.FloatTensor=None) -> torch.FloatTensor:
+    if mean is None:
+        mean = x.mean()
+    return torch.cat([mean.unsqueeze(-1), var(x, mean).unsqueeze(-1), skew(x, mean).unsqueeze(-1), kurtosis(x, mean).unsqueeze(-1)], -1)
 
 def hellinger(a: torch.FloatTensor, b: torch.FloatTensor) -> torch.FloatTensor:
     return (1 / torch.tensor(2, dtype=torch.float).sqrt()) * a.sqrt().dist(b.sqrt())

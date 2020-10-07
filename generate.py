@@ -61,8 +61,9 @@ def main() -> None:
     kwargs = checkpoint['model_kwargs']
     model = WindowedModel(checkpoint['arch'], vcf_writer.snps.shape[0], WINDOW_SIZE, **kwargs)
     model.to(device)
+    model.load_state_dict(checkpoint['state_dict'])
 
-    genotypes = []
+    probs = []
     num_haploids = 2 * args.num_samples * args.diversity_multiplier
     num_iterations = math.ceil(num_haploids / args.batch_size)
     label = torch.tensor(label_encoder.transform([args.population]))
@@ -76,11 +77,12 @@ def main() -> None:
                 batch_size = args.batch_size
             z = torch.randn(batch_size, kwargs['latent_size'] * len(model.models)).to(device)
             labels = label.repeat(batch_size).to(device)
-            x = model.decode(z, labels)
-            genotypes.append(x)
+            logits = model.decode(z, labels)
+            probs.append(logits.sigmoid())
 
-    genotypes = torch.cat(genotypes, 0)
-    genotypes = genotypes.sign()
+        probs = torch.cat(probs, 0)
+        genotypes = torch.bernoulli(probs)
+        genotypes = genotypes * 2 - 1
 
     if args.diversity_multiplier > 1:
         correlation_coefficients = corr_coef(genotypes)

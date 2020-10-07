@@ -157,7 +157,6 @@ class Decoder(nn.Module):
         self.layer3 = self._make_layer(8, layers[2], stride=4)
         self.deconv2 = deconv8(8, 1, stride=4)
         self.bn2 = nn.BatchNorm1d(2048)
-        self.tanh = nn.Tanh()
 
         for m in self.modules():
             if isinstance(m, nn.ConvTranspose1d):
@@ -189,7 +188,6 @@ class Decoder(nn.Module):
         x = self.layer3(x)
         x = self.deconv2(x).squeeze(1)
         x = self.bn2(x)
-        x = self.tanh(x)
         return x
 
 
@@ -242,8 +240,6 @@ class BaselineCVAE(nn.Module):
         self.fc4 = nn.Linear(self.hidden_size, feature_size)
 
         self.relu = nn.ReLU()
-        self.sigmoid = nn.Sigmoid()
-        self.tanh = nn.Tanh()
 
         # BatchNorms
         self.use_batch_norm = use_batch_norm
@@ -288,8 +284,6 @@ class BaselineCVAE(nn.Module):
         else:
             h3 = _h3
         out = self.fc4(h3)
-
-        out = self.tanh(out)
 
         return out
 
