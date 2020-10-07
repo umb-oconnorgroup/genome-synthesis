@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, Sampler
 
 from vcf_write import write_vcf
 
@@ -16,7 +16,7 @@ VCF_FIELDS = ['calldata/GT', 'samples', 'variants/ALT', 'variants/CHROM', 'varia
 
 class GenotypeDataset(Dataset):
     """docstring for GenotypeDataset"""
-    def __init__(self, genotypes: torch.FloatTensor, labels: torch.FloatTensor):
+    def __init__(self, genotypes: torch.FloatTensor, labels: torch.FloatTensor) -> None:
         super(GenotypeDataset, self).__init__()
         self.genotypes = genotypes
         self.labels = labels
@@ -26,6 +26,30 @@ class GenotypeDataset(Dataset):
 
     def __getitem__(self, index: int) -> Tuple[torch.FloatTensor, torch.FloatTensor]:
         return self.genotypes[index], self.labels[index]
+
+
+class BatchByLabelRandomSampler(Sampler):
+    """docstring for BatchByLabelRandomSampler"""
+    def __init__(self, batch_size: int, labels: torch.LongTensor) -> None:
+        self.batch_size = batch_size
+        self.labels = labels
+
+    def __iter__(self):
+        used_label_indices = torch.LongTensor([])
+        while len(used_label_indices) < len(self.labels):
+            remaining_filter = torch.ones_like(self.labels)
+            remaining_filter[used_label_indices] = 0
+            remaining_filter = remaining_filter.bool()
+            remaining_label_indices = torch.arange(len(self.labels))[remaining_filter]
+            label_idx = remaining_label_indices[torch.randint(0, len(remaining_label_indices), (1,))]
+            label_indices = torch.where((self.labels == self.labels[label_idx]).logical_and(remaining_filter))[0]
+            shuffled_label_indices = label_indices[torch.randperm(len(label_indices))]
+            selected_label_indices = shuffled_label_indices[:self.batch_size]
+            used_label_indices = torch.cat([used_label_indices, selected_label_indices])
+            yield selected_label_indices.tolist()
+
+    def __len__(self):
+        return ((torch.bincount(self.labels) + self.batch_size - 1) // self.batch_size).sum()
 
 
 class VCFWriter(object):

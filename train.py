@@ -10,7 +10,7 @@ import torch.backends.cudnn as cudnn
 from torch.optim import Adam, Optimizer
 from torch.utils.data import DataLoader
 
-from data import VCFReader
+from data import BatchByLabelRandomSampler, VCFReader
 from loss import vae_loss as loss_function
 from model import BaselineCVAE, CVAE, WindowedModel
 from utils import AverageMeter, ProgressMeter, get_device, save_checkpoint
@@ -77,8 +77,10 @@ def main() -> None:
     vcf_reader = VCFReader(args.train_data, args.classification_map, args.chromosome)
     vcf_writer = vcf_reader.get_vcf_writer()
     train_dataset, validation_dataset = vcf_reader.get_datasets(args.validation_split)
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
-    validation_loader = DataLoader(validation_dataset, batch_size=args.batch_size, shuffle=True)
+    train_sampler = BatchByLabelRandomSampler(args.batch_size, train_dataset.labels)
+    validation_sampler = BatchByLabelRandomSampler(args.batch_size, validation_dataset.labels)
+    train_loader = DataLoader(train_dataset, batch_sampler=train_sampler)
+    validation_loader = DataLoader(validation_dataset, batch_sampler=validation_sampler)
 
     # model_class = CVAE
     # kwargs = {'latent': args.latent_size, 'num_classes': len(vcf_reader.label_encoder.classes_), 'feature_size': WINDOW_SIZE}
