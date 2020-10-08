@@ -53,6 +53,7 @@ def site_frequency_spectrum(genotypes: np.ndarray, population: str=None) -> np.n
     ax = plt.gca()
     ax = allel.plot_sfs(sfs, ax=ax)
     plt.savefig(os.path.join(FIGURES_DIR, '{}.sfs.png'.format(population.replace(' ', '_'))))
+    plt.clf()
     return sfs / sfs.sum()
 
 def joint_position_indices(positions1: np.array, positions2: np.array) -> Tuple[List[int], List[int]]:
@@ -67,6 +68,7 @@ def joint_site_frequency_spectrum(genotypes1: np.ndarray, genotypes2: np.ndarray
     joint_sfs = allel.joint_sfs(allele_counts1, allele_counts2, np.product(genotypes1.shape[1:]), np.product(genotypes2.shape[1:]))
     ax = plot_joint_sfs(joint_sfs, population1, population2)
     plt.savefig(os.path.join(FIGURES_DIR, '{}.{}.joint_sfs.png'.format(population1.replace(' ', '_'), population2.replace(' ', '_'))))
+    plt.clf()
     return joint_sfs / joint_sfs.sum()
 
 def linkage_disequilibrium(positions: np.array, genotypes: np.ndarray, window_size: int=200000) -> None:
