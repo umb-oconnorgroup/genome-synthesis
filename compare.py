@@ -26,12 +26,15 @@ def main() -> None:
     genotypes1 = genotypes1[shared_position_indices1]
     genotypes2 = genotypes2[shared_position_indices2]
 
+    genotypes1[genotypes1 < 0] = 0
+    genotypes2[genotypes2 < 0] = 0
+
     sfs1 = site_frequency_spectrum(genotypes1)
     sfs2 = site_frequency_spectrum(genotypes2)
     joint_site_frequency_spectrum(genotypes1, genotypes2)
 
-    linkage_disequilibrium(positions1, genotypes1)
-    linkage_disequilibrium(positions2, genotypes2)
+    # linkage_disequilibrium(positions1, genotypes1)
+    # linkage_disequilibrium(positions2, genotypes2)
 
 def site_frequency_spectrum(genotypes: np.ndarray) -> np.ndarray:
     allele_counts = genotypes.reshape(genotypes.shape[0], -1).sum(1)

@@ -12,13 +12,13 @@ def vae_loss(x: torch.FloatTensor, logits: torch.FloatTensor, mu: torch.FloatTen
     kld = kld_loss(mu, logvar)
     return reconstruction + kld, reconstruction, kld
 
-def reconstruction_loss(x: torch.FloatTensor, logits: torch.FloatTensor, window_size: int) -> torch.FloatTensor:
+def reconstruction_loss(x: torch.FloatTensor, logits: torch.FloatTensor) -> torch.FloatTensor:
     # return x to 0 and 1 encoding
     x = ((x + 1) * (.5)).round()
     # sum across variants and mean across batch
     likelihood = bcel_loss(logits, x).sum(1).mean()
     # site_frequency = site_frequency_loss(x, logits)
-    ld = linkage_disequilibrium_loss(x, logits, window_size)
+    # ld = linkage_disequilibrium_loss(x, logits, window_size)
     # print(site_frequency.detach())
     # print(ld.detach())
     return likelihood

@@ -285,8 +285,6 @@ class CHVAE(nn.Module):
         return hidden
 
     def forward(self, x, c):
-        # one hot encode c
-        c = nn.functional.one_hot(c, self.class_size)
         mu, logvar = self.encode(x, c)
         z = self.reparametrize(mu, logvar)
         return self.decode(z, c), mu, logvar
@@ -316,6 +314,17 @@ class BaselineCVAE(nn.Module):
             self.bn_fc1 = nn.BatchNorm1d(self.hidden_size)
             self.bn_fc3 = nn.BatchNorm1d(self.hidden_size)
 
+    def encoder_parameters(self):
+        modules = [self.fc1, self.fc21, self.fc22]
+        if self.use_batch_norm:
+            modules.append(self.bn_fc1)
+        return [parameter for module in modules for parameter in module.parameters()]
+
+    def decoder_parameters(self):
+        modules = [self.fc3, self.fc4]
+        if self.use_batch_norm:
+            modules.append(self.bn_fc3)
+        return [parameter for module in modules for parameter in module.parameters()]
 
     def encode(self, x, c): # Q(z|x, c)
         '''
@@ -357,8 +366,6 @@ class BaselineCVAE(nn.Module):
         return out
 
     def forward(self, x, c):
-        # one hot encode c
-        c = nn.functional.one_hot(c, self.class_size)
         mu, logvar = self.encode(x, c)
         z = self.reparametrize(mu, logvar)
         return self.decode(z, c), mu, logvar
@@ -367,26 +374,29 @@ class WindowedModel(nn.Module):
     """docstring for WindowedModel"""
     def __init__(self, ModelClass: Callable, total_size: int, window_size: int, **kwargs):
         super(WindowedModel, self).__init__()
+
         self.total_size = total_size
         self.window_size = window_size
-        self.models = nn.ModuleList([])
+        self.vaes = nn.ModuleList([])
+        self.discriminators = nn.ModuleList([])
         num_models = math.ceil(self.total_size / self.window_size)
         for i in range(num_models):
             if i == num_models - 1:
                 new_kwargs = dict([(key, kwargs[key]) for key in kwargs])
                 new_kwargs['feature_size'] = self.total_size % self.window_size
-                model = ModelClass(**new_kwargs)
+                vae = ModelClass(**new_kwargs)
+                discriminator = Discriminator(self.total_size % self.window_size, kwargs['class_size'])
             else:
-                model = ModelClass(**kwargs)
-            self.models.append(model)
+                vae = ModelClass(**kwargs)
+                discriminator = Discriminator(self.window_size, kwargs['class_size'])
+            self.vaes.append(vae)
+            self.discriminators.append(discriminator)
 
     def decode(self, z, c):
-        if isinstance(self.models[0], BaselineCVAE) or isinstance(self.models[0], CHVAE):
-            c = nn.functional.one_hot(c, self.models[0].class_size)
         decoded_xs = []
-        for i, (z_i, model) in enumerate(zip(z.split(z.shape[1] // len(self.models), 1), self.models)):
-            decoded_x = model.decode(z_i, c)
-            if i == len(self.models) - 1 and self.total_size % self.window_size != 0:
+        for i, (z_i, vae) in enumerate(zip(z.split(z.shape[1] // len(self.vaes), 1), self.vaes)):
+            decoded_x = vae.decode(z_i, c)
+            if i == len(self.vaes) - 1 and self.total_size % self.window_size != 0:
                 decoded_x = decoded_x[:, :self.total_size % self.window_size]
             decoded_xs.append(decoded_x)
         decoded_x = torch.cat(decoded_xs, 1)
@@ -396,9 +406,9 @@ class WindowedModel(nn.Module):
         reconstructed_xs = []
         mus = []
         logvars = []
-        for i, (x_i, model) in enumerate(zip(x.split(self.window_size, 1), self.models)):
-            reconstructed_x, mu, logvar = model(x_i, c)
-            if i == len(self.models) - 1 and self.total_size % self.window_size != 0:
+        for i, (x_i, vae) in enumerate(zip(x.split(self.window_size, 1), self.vaes)):
+            reconstructed_x, mu, logvar = vae(x_i, c)
+            if i == len(self.vaes) - 1 and self.total_size % self.window_size != 0:
                 reconstructed_x = reconstructed_x[:, :self.total_size % self.window_size]
             reconstructed_xs.append(reconstructed_x)
             mus.append(mu)
@@ -407,3 +417,53 @@ class WindowedModel(nn.Module):
         mu = torch.cat(mus, 1)
         logvar = torch.cat(logvars, 1)
         return reconstructed_x, mu, logvar
+
+    def forward_discriminator(self, x, c):
+        outputs = []
+        for i, (x_i, discriminator) in enumerate(zip(x.split(self.window_size, 1), self.discriminators)):
+            output = discriminator(x_i, c)
+            outputs.append(output)
+        return torch.cat(outputs, 1)
+
+        # outputs_dis = []
+
+        # for j, dis in enumerate(self.discriminators):
+        #     if j == len(self.discriminators)-1:
+        #         _x = x[:, j*self.window_size:]
+        #     else:
+        #         _x = x[:, j * self.window_size : (j + 1) * self.window_size]
+        #     out_dis = dis(_x, c)
+        #     outputs_dis.append(out_dis)
+
+        # output_dis = torch.stack(outputs_dis,dim=1).squeeze(dim=2)
+        # return output_dis
+
+
+class Discriminator(nn.Module):
+    def __init__(self, window_size, num_classes=3):
+        super(Discriminator, self).__init__()
+
+        self.hidden_size = 400
+
+        # encode
+        input_size = 2 * window_size + num_classes
+        # input_size = window_size + num_classes
+        self.fc1  = nn.Linear(input_size, self.hidden_size)
+        self.fc2 = nn.Linear(self.hidden_size, 1)
+        self.relu = nn.ReLU()
+
+    def forward(self, x, c):
+        '''
+        x: (bs, feature_size)
+        c: (bs, class_size)
+        '''
+
+        batch = x.shape[0]
+        allele_counts = x.mean(0).unsqueeze(0).repeat(batch, 1)
+        inputs = torch.cat([x, allele_counts, c], 1)
+
+        # inputs = torch.cat([x, c], 1)
+
+        h1 = self.relu(self.fc1(inputs))
+        h2 = self.fc2(h1)
+        return h2

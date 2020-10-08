@@ -75,9 +75,10 @@ def main() -> None:
                 batch_size = num_haploids % args.batch_size
             else:
                 batch_size = args.batch_size
-            z = torch.randn(batch_size, kwargs['latent_size'] * len(model.models)).to(device)
+            z = torch.randn(batch_size, kwargs['latent_size'] * len(model.vaes)).to(device)
             labels = label.repeat(batch_size).to(device)
-            logits = model.decode(z, labels)
+            one_hot_labels = torch.nn.functional.one_hot(labels, len(label_encoder.classes_))
+            logits = model.decode(z, one_hot_labels)
             probs.append(logits.sigmoid())
 
         probs = torch.cat(probs, 0)
@@ -90,9 +91,9 @@ def main() -> None:
         genotypes = genotypes[diverse_indices]
 
     genotypes = genotypes.T
-    genotypes = genotypes.reshape(genotypes.shape[0], -1, 2)
+    genotypes = genotypes.reshape(genotypes.shape[0], -1, 2).cpu()
 
-    samples = ['Sample{}'.format(i) for i in range(args.num_samples)]
+    samples = ['{}{}'.format(args.population, i) for i in range(args.num_samples)]
 
     if args.data_name is None:
         file_name = '{}.chr{}.vcf'.format(args.population, vcf_writer.chromosome)
