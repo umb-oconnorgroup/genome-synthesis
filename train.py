@@ -106,7 +106,7 @@ def main() -> None:
             checkpoint = torch.load(args.resume_path)
             if not isinstance(model.vaes[0], checkpoint['arch']):
                 raise TypeError('WindowedModel\'s submodels should be instances of {}'.format(checkpoint['arch']))
-            if kwargs != checkpoint['kwargs']:
+            if kwargs != checkpoint['model_kwargs']:
                 raise ValueError('The checkpoint\'s kwargs don\'t match the ones used to initialize the model')
             if vcf_reader.snps.shape[0] != checkpoint['vcf_writer'].snps.shape[0]:
                 raise ValueError('The data on which the checkpoint was trained had a different number of snp positions')
@@ -131,21 +131,24 @@ def main() -> None:
             # validation_loss = validate(validation_loader, model, loss_function, args)
             # is_best = validation_loss < best_loss
             # best_loss = min(validation_loss, best_loss)
-        is_best = loss < best_loss
-        best_loss = min(loss, best_loss)
 
-        save_checkpoint({
-            'epoch': epoch + 1,
-            'arch': model_class,
-            'state_dict': model.state_dict(),
-            'model_kwargs': kwargs,
-            'best_loss': best_loss,
-            'encoder_optimizer': encoder_optimizer.state_dict(),
-            'decoder_optimizer': decoder_optimizer.state_dict(),
-            'discriminator_optimizer': discriminator_optimizer.state_dict(),
-            'vcf_writer': vcf_writer,
-            'label_encoder': vcf_reader.label_encoder
-        }, is_best, args.chromosome, args.model_name, args.model_dir)
+        if epoch % 10 == 0 or epoch == args.epochs + start_epoch - 1:
+
+            is_best = loss < best_loss
+            best_loss = min(loss, best_loss)
+
+            save_checkpoint({
+                'epoch': epoch + 1,
+                'arch': model_class,
+                'state_dict': model.state_dict(),
+                'model_kwargs': kwargs,
+                'best_loss': best_loss,
+                'encoder_optimizer': encoder_optimizer.state_dict(),
+                'decoder_optimizer': decoder_optimizer.state_dict(),
+                'discriminator_optimizer': discriminator_optimizer.state_dict(),
+                'vcf_writer': vcf_writer,
+                'label_encoder': vcf_reader.label_encoder
+            }, is_best, args.chromosome, args.model_name, args.model_dir)
 
 def train(loader: DataLoader, model: nn.Module,
         reconstruction_criterion: Callable, kld_criterion: Callable,

@@ -38,12 +38,33 @@ def main() -> None:
     genotypes1[genotypes1 < 0] = 0
     genotypes2[genotypes2 < 0] = 0
 
-    sfs1 = site_frequency_spectrum(genotypes1, population1)
-    sfs2 = site_frequency_spectrum(genotypes2, population2)
+    #
+    # allele_counts1 = genotypes1.reshape(genotypes1.shape[0], -1).sum(1)
+    # allele_counts2 = genotypes2.reshape(genotypes2.shape[0], -1).sum(1)
+    # sfs1 = allel.sfs(allele_counts1, np.product(genotypes1.shape[1:]))
+    # sfs2 = allel.sfs(allele_counts2, np.product(genotypes2.shape[1:]))
+    # plt.title('real vs synthetic PGP site frequency spectrum')
+    # ax = plt.gca()
+    # ax = allel.plot_sfs(sfs1, ax=ax, label=population1, plot_kwargs=dict([('c','b')]))
+    # ax = allel.plot_sfs(sfs2, ax=ax, label=population2, plot_kwargs=dict([('c','g')]))
+    # ax.legend()
+    # plt.savefig(os.path.join(FIGURES_DIR, 'synthetic_PGP.PGP.sfs.png'))
+    # plt.clf()
+    #
+
+    # sfs1 = site_frequency_spectrum(genotypes1, population1)
+    # sfs2 = site_frequency_spectrum(genotypes2, population2)
     joint_site_frequency_spectrum(genotypes1, genotypes2, population1, population2)
 
-    # linkage_disequilibrium(positions1, genotypes1)
-    # linkage_disequilibrium(positions2, genotypes2)
+    # windows1 = linkage_disequilibrium(positions1, genotypes1)
+    # windows2 = linkage_disequilibrium(positions2, genotypes2)
+
+    # means1 = [d['r_squared mean'] for d in windows1]
+    # means2 = [d['r_squared mean'] for d in windows2]
+    # print(np.mean(means1))
+    # print(np.var(means1))
+    # print(np.mean(means2))
+    # print(np.var(means2))
 
 def site_frequency_spectrum(genotypes: np.ndarray, population: str=None) -> np.ndarray:
     allele_counts = genotypes.reshape(genotypes.shape[0], -1).sum(1)
@@ -71,7 +92,7 @@ def joint_site_frequency_spectrum(genotypes1: np.ndarray, genotypes2: np.ndarray
     plt.clf()
     return joint_sfs / joint_sfs.sum()
 
-def linkage_disequilibrium(positions: np.array, genotypes: np.ndarray, window_size: int=200000) -> None:
+def linkage_disequilibrium(positions: np.array, genotypes: np.ndarray, window_size: int=200000) -> Tuple[dict]:
     genotypes = torch.FloatTensor(genotypes.reshape(genotypes.shape[0], -1)).T
     windows = []
     position = 0
@@ -88,7 +109,7 @@ def linkage_disequilibrium(positions: np.array, genotypes: np.ndarray, window_si
             'r_squared variance': non_nan_rsquared.var()
         }
         windows.append(summary)
-    print(windows)
+    return windows
 
 def plot_joint_sfs(s: np.ndarray, population1: str='population1', population2: str='population2') -> matplotlib.axes.Axes:
     """Plot a joint site frequency spectrum.
@@ -127,7 +148,8 @@ def plot_joint_sfs(s: np.ndarray, population1: str='population1', population2: s
     imshow_kwargs.setdefault('norm', LogNorm())
 
     # plot data
-    ax.imshow(s.T, **imshow_kwargs)
+    pos = ax.imshow(s.T, **imshow_kwargs)
+    fig.colorbar(pos)
 
     # tidy
     ax.invert_yaxis()
