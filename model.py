@@ -370,6 +370,32 @@ class BaselineCVAE(nn.Module):
         z = self.reparametrize(mu, logvar)
         return self.decode(z, c), mu, logvar
 
+
+class WindowedTransformer(nn.Module):
+    """docstring for WindowedTransformer"""
+    def __init__(self, total_size: int, window_size: int, num_output: int, hidden_size: int, num_layers: int, num_heads=8):
+        super(WindowedTransformer, self).__init__()
+
+        self.total_size = total_size
+        self.window_size = window_size
+        transformer_encoder_layer = nn.TransformerEncoderLayer(d_model=hidden_size, nhead=num_heads, dim_feedforward=hidden_size*4, dropout=0)
+        self.transformer = nn.TransformerEncoder(transformer_encoder_layer, num_layers=num_layers, norm=nn.LayerNorm(hidden_size))
+        self.output_layer = nn.Linear(hidden_size*2, num_output)
+
+    def forward(self, x):
+        hidden_states = []
+        for x_i in x.split(self.window_size, 1):
+            hidden_states.append(self.transformer(x_i))
+        overlaping_hidden_states = []
+        for x_i in (x[:, :self.window_size // 2],) + x[:, self.window_size // 2:].split(self.window_size, 1):
+            overlaping_hidden_states.append(self.transformer(x_i))
+        hidden_states = torch.cat(hidden_states, 1)
+        overlaping_hidden_states = torch.cat(overlaping_hidden_states, 1)
+        hidden_states = torch.cat([hidden_states, overlaping_hidden_states], -1)
+        logits = self.output_layer(hidden_states)
+        return logits
+
+
 class WindowedModel(nn.Module):
     """docstring for WindowedModel"""
     def __init__(self, ModelClass: Callable, total_size: int, window_size: int, **kwargs):
