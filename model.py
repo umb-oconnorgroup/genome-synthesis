@@ -373,12 +373,12 @@ class BaselineCVAE(nn.Module):
 
 class WindowedTransformer(nn.Module):
     """docstring for WindowedTransformer"""
-    def __init__(self, total_size: int, window_size: int, num_output: int, hidden_size: int, num_layers: int, num_heads=8):
+    def __init__(self, total_size: int, window_size: int, num_output: int, hidden_size: int, num_layers: int, num_heads=4):
         super(WindowedTransformer, self).__init__()
 
         self.total_size = total_size
         self.window_size = window_size
-        transformer_encoder_layer = nn.TransformerEncoderLayer(d_model=hidden_size, nhead=num_heads, dim_feedforward=hidden_size*4, dropout=0)
+        transformer_encoder_layer = nn.TransformerEncoderLayer(d_model=hidden_size, nhead=num_heads, dim_feedforward=hidden_size*2, dropout=0)
         self.transformer = nn.TransformerEncoder(transformer_encoder_layer, num_layers=num_layers, norm=nn.LayerNorm(hidden_size))
         self.output_layer = nn.Linear(hidden_size*2, num_output)
 
