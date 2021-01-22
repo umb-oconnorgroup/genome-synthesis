@@ -7,7 +7,7 @@ import torch
 import torch.backends.cudnn as cudnn
 
 from loss import squared_corr_coef
-from model import WindowedTransformer
+from model import WindowedMLP
 from utils import get_device
 
 
@@ -84,7 +84,7 @@ def main() -> None:
         raise ValueError('The super population of the samples to be generated was not in the training data')
 
     kwargs = checkpoint['model_kwargs']
-    model = WindowedTransformer(**kwargs)
+    model = WindowedMLP(**kwargs)
     model.to(device)
     model.load_state_dict(checkpoint['state_dict'])
 
