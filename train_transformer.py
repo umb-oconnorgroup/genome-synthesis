@@ -12,7 +12,6 @@ from torch.optim import AdamW, Optimizer
 from torch.utils.data import DataLoader
 
 from data import BatchByLabelRandomSampler, VCFReader
-from loss import reconstruction_loss, kld_loss
 from model import WindowedTransformer
 from utils import AverageMeter, ProgressMeter, get_device, save_checkpoint
 
@@ -38,7 +37,7 @@ parser.add_argument('-e', '--epochs', type=int, default=20,
                     help='number of training epochs to run')
 parser.add_argument('--hidden', type=int, default=128,
                     help='hidden dimension size')
-parser.add_argument('-l', '--layers', type=int, default=3,
+parser.add_argument('-l', '--layers', type=int, default=4,
                     help='number of transformer layers')
 parser.add_argument('-s', '--seed', type=int, default=None,
                     help='random seed for reproducibility')
@@ -46,9 +45,11 @@ parser.add_argument('-w', '--window-size', type=int, default=1024,
                     help='size of the window that the snp positions are split into')
 parser.add_argument('-b', '--batch-size', type=int, default=8,
                     help='training data batch size')
-parser.add_argument('--learning-rate', default=0.001, type=float,
+parser.add_argument('--learning-rate', default=0.0005, type=float,
                     help='initial learning rate')
-parser.add_argument('-t', '--validation-split', default=0.2, type=float,
+parser.add_argument('--minor-coefficient', default=3.0, type=float,
+                    help='coefficient for updating weights linked to snps with nonzero maf')
+parser.add_argument('-t', '--validation-split', default=0.0, type=float,
                     help='portion of the data used for validation')
 parser.add_argument('-v', '--validate', action='store_true',
                     help='only evaluate model on validation set')
@@ -84,12 +85,11 @@ def main() -> None:
         validation_sampler = BatchByLabelRandomSampler(args.batch_size, validation_dataset.labels)
         validation_loader = DataLoader(validation_dataset, batch_sampler=validation_sampler)
 
-    kwargs = {'positions': vcf_reader.positions, 'window_size': args.window_size, 'num_output': 3, 'hidden_size': args.hidden, 'num_layers': args.layers, 'num_classes': len(vcf_reader.label_encoder.classes_), 'num_super_classes': len(vcf_reader.super_label_encoder.classes_)}
+    kwargs = {'positions': vcf_reader.positions, 'window_size': args.window_size, 'num_output': 1, 'hidden_size': args.hidden, 'num_layers': args.layers, 'num_classes': len(vcf_reader.label_encoder.classes_), 'num_super_classes': len(vcf_reader.super_label_encoder.classes_)}
     model = WindowedTransformer(**kwargs)
     model.to(get_device(args))
 
     optimizer = AdamW(model.parameters(), lr=args.learning_rate)
-    criterion = nn.CrossEntropyLoss(reduction='mean')
 
     #######
     if args.resume_path is not None:
@@ -115,7 +115,7 @@ def main() -> None:
         return
 
     for epoch in range(start_epoch, args.epochs + start_epoch):
-        loss = train(train_loader, model, criterion, optimizer, len(vcf_reader.label_encoder.classes_), len(vcf_reader.super_label_encoder.classes_), vcf_reader.maf, epoch, args)
+        loss = train(train_loader, model, nn.functional.binary_cross_entropy_with_logits, optimizer, len(vcf_reader.label_encoder.classes_), len(vcf_reader.super_label_encoder.classes_), vcf_reader.maf, epoch, args)
         # if args.validation_split != 0:
             # validation_loss = validate(validation_loader, model, loss_function, args)
             # is_best = validation_loss < best_loss
@@ -134,7 +134,8 @@ def main() -> None:
                 'optimizer': optimizer.state_dict(),
                 'vcf_writer': vcf_writer,
                 'label_encoder': vcf_reader.label_encoder,
-                'label_encoder': vcf_reader.super_label_encoder
+                'super_label_encoder': vcf_reader.super_label_encoder,
+                'maf': vcf_reader.maf
             }, is_best, args.chromosome, args.model_name, args.model_dir)
 
 def train(loader: DataLoader, model: nn.Module, criterion: Callable, optimizer: Optimizer,
@@ -142,7 +143,9 @@ def train(loader: DataLoader, model: nn.Module, criterion: Callable, optimizer: 
         epoch: int, args: ArgumentParser) -> torch.FloatTensor:
     batch_time = AverageMeter('Time', ':6.3f')
     losses = AverageMeter('MLM Loss', ':.4e')
-    progress = ProgressMeter(len(loader), [batch_time, losses], prefix="Epoch: [{}]".format(epoch))
+    accuracies = AverageMeter('Acc', ':.4e')
+    accuracy_deltas = AverageMeter('Acc Delta', ':.4e')
+    progress = ProgressMeter(len(loader), [batch_time, losses, accuracies, accuracy_deltas], prefix="Epoch: [{}]".format(epoch))
 
     model.train()
 
@@ -153,29 +156,40 @@ def train(loader: DataLoader, model: nn.Module, criterion: Callable, optimizer: 
         ### Mask for Masked Language Modeling
         mask_num = int((torch.distributions.beta.Beta(1.7, 3).sample() * genotypes.shape[1]).round().item())
         mask_scores = torch.rand(genotypes.shape[1])
-        # use maf to increase scores (I am assuming the label is uniform for the batch)
-        # give slight boost to every index that has a nonzero minor allele frequency for the given population
-        mask_scores[maf[labels[0]] > 0] += .15
-        mask_indices = mask_scores.argsort()[:mask_num]
-        masked_genotypes = (genotypes[:, mask_indices].long() + 1).reshape(-1).clone().detach()
+        mask_indices = mask_scores.argsort(descending=True)[:mask_num]
+        masked_genotypes = genotypes[:, mask_indices].reshape(-1)
+        targets = (masked_genotypes == 1).float().clone().detach()
         genotypes[:, mask_indices] = 0
         maf_vector = maf[labels[0]]
 
         genotypes = genotypes.to(device)
         masked_genotypes = masked_genotypes.to(device)
+        targets = targets.to(device)
         labels = labels.to(device)
         super_labels = super_labels.to(device)
         maf_vector = maf_vector.to(device)
 
         ### Train
         logits = model(genotypes, labels, super_labels, maf_vector)
-        logits = logits[:, mask_indices].reshape(-1, 3)
-        loss = criterion(logits, masked_genotypes)
+        logits = logits[:, mask_indices].reshape(-1)
+
+        # add weight to nonzero maf snps
+        weights = torch.ones_like(logits)
+        weight_coefficients = (maf_vector[mask_indices] > 0).repeat(genotypes.shape[0]).float() * (args.minor_coefficient - 1) + 1
+        weights *= weight_coefficients
+
+        loss = criterion(logits, targets, weight=weights, reduction='mean')
         model.zero_grad()
         loss.backward()
         optimizer.step()
+        
+        accuracy = (masked_genotypes * logits.sign()).mean() / 2 + .5
+        baseline_accuracy = (masked_genotypes * (maf_vector[mask_indices].repeat(genotypes.shape[0]) - .5000001).sign()).mean() / 2 + .5
+        accuracy_delta = accuracy - baseline_accuracy
 
         losses.update(loss.item(), genotypes.shape[0])
+        accuracies.update(accuracy.item(), genotypes.shape[0])
+        accuracy_deltas.update(accuracy_delta.item(), genotypes.shape[0])
         batch_time.update(time.time() - end)
         end = time.time()
 
