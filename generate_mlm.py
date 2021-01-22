@@ -28,7 +28,7 @@ parser.add_argument('--seed', type=int, default=None,
                     help='random seed for reproducibility')
 parser.add_argument('-n', '--num-samples', type=int, default=100,
                     help='number of diploids to generate')
-parser.add_argument('-b', '--batch-size', type=int, default=8,
+parser.add_argument('-b', '--batch-size', type=int, default=128,
                     help='training data batch size')
 parser.add_argument('--passes', type=int, default=50,
                     help='training data batch size')
@@ -45,7 +45,7 @@ def generate(num_passes, model, label, super_label, maf, batch_size, device):
         num_selected = genotypes.shape[1] // num_passes
         if j == num_passes - 1:
             num_selected += genotypes.shape[1] % num_passes
-        logits = model(genotypes, labels, super_labels, maf).squeeze(-1)
+        logits = model(genotypes, labels, super_labels).squeeze(-1)
         # zero out logits of already selected indices
         logits[genotypes != 0] = 0
         selected_indices = logits.abs().argsort(descending=True)[:, :num_selected]

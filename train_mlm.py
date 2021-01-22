@@ -25,7 +25,7 @@ parser.add_argument('--class-hierarchy', type=str, default=None,
                     help='path to map from class to superclass')
 parser.add_argument('-c', '--chromosome', type=int,
                     help='chromosome selected for training')
-parser.add_argument('--model-name', type=str, default='tran',
+parser.add_argument('--model-name', type=str, default='mlm',
                     help='name added as prefix to file where model checkpoint will be saved')
 parser.add_argument('--model-dir', type=str, default='models',
                     help='path to directory where model checkpoint will be saved')
@@ -38,7 +38,7 @@ parser.add_argument('-e', '--epochs', type=int, default=50,
 # parser.add_argument('--hidden', type=int, default=128,
 #                     help='hidden dimension size')
 parser.add_argument('-l', '--layers', type=int, default=4,
-                    help='number of transformer layers')
+                    help='number of layers')
 parser.add_argument('-s', '--seed', type=int, default=None,
                     help='random seed for reproducibility')
 parser.add_argument('-w', '--window-size', type=int, default=1024,

@@ -470,16 +470,36 @@ class WindowedMLP(nn.Module):
                 window_size = self.window_size
             mlp = MLP(window_size + self.num_classes + self.num_super_classes, window_size, window_size, num_layers)
             self.mlps.append(mlp)
+        self.overlaping_mlps = nn.ModuleList([])
+        num_models = math.ceil((self.total_size - self.window_size // 2) / self.window_size) + 1
+        for i in range(num_models):
+            if i == 0:
+                window_size = self.window_size // 2
+            elif i == num_models - 1:
+                window_size = (self.total_size - self.window_size // 2) % self.window_size
+            else:
+                window_size = self.window_size
+            mlp = MLP(window_size + self.num_classes + self.num_super_classes, window_size, window_size, num_layers)
+            self.overlaping_mlps.append(mlp)
 
     def forward(self, genotypes, labels, super_labels):
 
         one_hot_label = nn.functional.one_hot(labels, self.num_classes)
         one_hot_super_label = nn.functional.one_hot(super_labels, self.num_super_classes)
+
         reconstructed_genotypes = []
-        for i, (genotype_i, mlp) in enumerate(zip(genotypes.split(self.window_size, 1), self.mlps)):
+        for genotype_i, mlp in zip(genotypes.split(self.window_size, 1), self.mlps):
             reconstructed_genotype = mlp(torch.cat([genotype_i, one_hot_label, one_hot_super_label], 1))
             reconstructed_genotypes.append(reconstructed_genotype)
         reconstructed_genotypes = torch.cat(reconstructed_genotypes, 1)
+
+        reconstructed_overlaping_genotypes = []
+        for genotype_i, mlp in zip((genotypes[:, :self.window_size // 2],) + genotypes[:, self.window_size // 2:].split(self.window_size, 1), self.overlaping_mlps):
+            reconstructed_genotype = mlp(torch.cat([genotype_i, one_hot_label, one_hot_super_label], 1))
+            reconstructed_overlaping_genotypes.append(reconstructed_genotype)
+        reconstructed_overlaping_genotypes = torch.cat(reconstructed_overlaping_genotypes, 1)
+
+        reconstructed_genotypes = reconstructed_genotypes + reconstructed_overlaping_genotypes
         return reconstructed_genotypes
 
 
