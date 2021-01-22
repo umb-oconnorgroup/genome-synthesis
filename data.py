@@ -16,16 +16,17 @@ VCF_FIELDS = ['calldata/GT', 'samples', 'variants/ALT', 'variants/CHROM', 'varia
 
 class GenotypeDataset(Dataset):
     """docstring for GenotypeDataset"""
-    def __init__(self, genotypes: torch.FloatTensor, labels: torch.FloatTensor) -> None:
+    def __init__(self, genotypes: torch.FloatTensor, labels: torch.LongTensor, super_labels: torch.LongTensor) -> None:
         super(GenotypeDataset, self).__init__()
         self.genotypes = genotypes
         self.labels = labels
+        self.super_labels = super_labels
 
     def __len__(self) -> int:
         return self.genotypes.shape[0]
 
-    def __getitem__(self, index: int) -> Tuple[torch.FloatTensor, torch.FloatTensor]:
-        return self.genotypes[index], self.labels[index]
+    def __getitem__(self, index: int) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor]:
+        return self.genotypes[index], self.labels[index], self.super_labels[index]
 
 
 class BatchByLabelRandomSampler(Sampler):
@@ -82,7 +83,7 @@ class VCFWriter(object):
 
 class VCFReader(object):
     """docstring for VCFReader"""
-    def __init__(self, vcf_path: str, classification_map_path: str, chromosome: int) -> None:
+    def __init__(self, vcf_path: str, classification_map_path: str, chromosome: int, class_hierarchy_map: str=None) -> None:
         super(VCFReader, self).__init__()
         self.chromosome = str(chromosome)
         callset = self.read_vcf(vcf_path)
@@ -92,14 +93,26 @@ class VCFReader(object):
             raise('Some of the samples in the VCF file do not appear in the classification_map')
         classifications = [classification_map.loc[sample]['class'] for sample in samples]
         self.label_encoder = LabelEncoder()
-        self.labels = torch.tensor(self.label_encoder.fit_transform(classifications))
+        self.labels = torch.LongTensor(self.label_encoder.fit_transform(classifications))
+        if class_hierarchy_map is not None:
+            class_hierarchy_map = pd.read_csv(class_hierarchy_map, index_col=0)
+            superclassifications = [class_hierarchy_map.loc[classification]['Super Population Code'] for classification in classifications]
+            self.super_label_encoder = LabelEncoder()
+            self.super_labels = torch.LongTensor(self.super_label_encoder.fit_transform(superclassifications))
+        else:
+            self.super_labels = torch.zeros(self.labels.shape[0]).long()
         genotypes, positions, refs, alts = biallelic_variant_filter(callset, self.chromosome)
+        self.positions = torch.LongTensor(positions)
         self.snps = pd.DataFrame(np.stack([refs, alts], axis=1), index=positions, columns=['REF', 'ALT'])
         self.genotypes = self.encode_pos_neg(genotypes)
         # transform diploid data into haploid data and apply same transformation to labels
         if len(self.genotypes.shape) == 3:
             self.labels = self.labels.unsqueeze(1).repeat(1, self.genotypes.shape[2]).reshape(-1)
+            self.super_labels = self.super_labels.unsqueeze(1).repeat(1, self.genotypes.shape[2]).reshape(-1)
             self.genotypes = self.genotypes.reshape(self.genotypes.shape[0], -1)
+        # calculate minor allele frequency
+        one_hot_labels = torch.nn.functional.one_hot(self.labels)
+        self.maf = ((1. / one_hot_labels.sum(0).float()) * (self.genotypes == 1).float().matmul(one_hot_labels.float())).T
 
     def read_vcf(self, file_path: str) -> dict:
         return allel.read_vcf(file_path, fields=VCF_FIELDS)
@@ -117,12 +130,13 @@ class VCFReader(object):
         if val_split > 1 or val_split < 0:
             raise ValueError('val_split must be in between 0 and 1')
         elif val_split == 0:
-            return GenotypeDataset(self.genotypes.T , self.labels), None
+            return GenotypeDataset(self.genotypes.T, self.labels, self.super_labels), None
         val_size = math.floor(self.genotypes.shape[1] * val_split)
         permutation_idx = torch.randperm(self.genotypes.shape[1])
         permuted_genotypes = self.genotypes.T[permutation_idx]
         permuted_labels = self.labels[permutation_idx]
-        return GenotypeDataset(permuted_genotypes[val_size:] , permuted_labels[val_size:]), GenotypeDataset(permuted_genotypes[0: val_size] , permuted_labels[0 :val_size])
+        permuted_super_labels = self.super_labels[permutation_idx]
+        return GenotypeDataset(permuted_genotypes[val_size:], permuted_labels[val_size:], permuted_super_labels[val_size:]), GenotypeDataset(permuted_genotypes[0: val_size], permuted_labels[0 :val_size], permuted_super_labels[0 :val_size])
 
     def get_vcf_writer(self) -> VCFWriter:
         return VCFWriter(self.chromosome, self.snps)

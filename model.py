@@ -1,6 +1,7 @@
 import math
 from typing import Callable
 
+import numpy as np
 import torch
 from torch import nn
 
@@ -371,18 +372,58 @@ class BaselineCVAE(nn.Module):
         return self.decode(z, c), mu, logvar
 
 
+class PositionalEncoding(nn.Module):
+
+    def __init__(self, hidden_size, positions):
+        super(PositionalEncoding, self).__init__()
+        self.register_buffer('sinusoid_table', self._get_sinusoid_table(hidden_size, positions))
+
+    def _get_denominators(self, hidden_size):
+        return torch.tensor([1. / np.power(100000, 2 * (hid_j // 2) / hidden_size) for hid_j in range(hidden_size)]).float()
+
+    def _get_sinusoid_table(self, hidden_size, positions):
+        sinusoid_table = positions.unsqueeze(-1).repeat(1, hidden_size) * self._get_denominators(hidden_size)
+        sinusoid_table[:, 0::2] = sinusoid_table[:, 0::2].sin()
+        sinusoid_table[:, 1::2] = sinusoid_table[:, 1::2].cos()
+        return sinusoid_table
+
+    def forward(self, x):
+        return x + self.sinusoid_table.clone().detach()
+
+
 class WindowedTransformer(nn.Module):
     """docstring for WindowedTransformer"""
-    def __init__(self, total_size: int, window_size: int, num_output: int, hidden_size: int, num_layers: int, num_heads=4):
+    def __init__(self, positions: torch.LongTensor, window_size: int, num_output: int, hidden_size: int, num_layers: int, num_classes: int, num_super_classes: int, num_heads=4):
         super(WindowedTransformer, self).__init__()
 
-        self.total_size = total_size
+        self.total_size = positions.shape[0]
         self.window_size = window_size
+        class_embedding_size = hidden_size // 4 - 2
+        self.class_embedding = nn.Embedding(num_classes + num_super_classes, class_embedding_size)
+        positional_embedding_size = hidden_size - class_embedding_size - 2
+        self.positional_embedding = nn.Embedding(self.total_size, positional_embedding_size)
+        self.positional_encoding = PositionalEncoding(positional_embedding_size, positions)
         transformer_encoder_layer = nn.TransformerEncoderLayer(d_model=hidden_size, nhead=num_heads, dim_feedforward=hidden_size*2, dropout=0)
         self.transformer = nn.TransformerEncoder(transformer_encoder_layer, num_layers=num_layers, norm=nn.LayerNorm(hidden_size))
         self.output_layer = nn.Linear(hidden_size*2, num_output)
 
-    def forward(self, x):
+    def forward(self, genotypes, labels, super_labels, maf):
+        genotypes = genotypes.unsqueeze(-1)
+
+        maf = maf.unsqueeze(0).unsqueeze(-1).repeat(genotypes.shape[0], 1, 1)
+
+        label_embedding = self.class_embedding(labels).float() + self.class_embedding(super_labels).float()
+        label_embedding = label_embedding.unsqueeze(1).repeat(1, genotypes.shape[1], 1)
+
+        position_indices = torch.arange(self.total_size, device=genotypes.device)
+        # absolute position embeddings
+        positional_embedding = self.positional_embedding(position_indices)
+        # add relative position information
+        positional_embedding = self.positional_encoding(positional_embedding)
+        positional_embedding = positional_embedding.unsqueeze(0).repeat(genotypes.shape[0], 1, 1)
+        
+        # concat input representation
+        x = torch.cat([genotypes, maf, label_embedding, positional_embedding], 2)
         hidden_states = []
         for x_i in x.split(self.window_size, 1):
             hidden_states.append(self.transformer(x_i))
