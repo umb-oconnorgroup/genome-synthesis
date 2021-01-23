@@ -468,7 +468,7 @@ class WindowedMLP(nn.Module):
                 window_size = self.total_size % self.window_size
             else:
                 window_size = self.window_size
-            mlp = MLP(window_size + self.num_classes + self.num_super_classes, window_size, window_size, num_layers)
+            mlp = MLP(window_size + self.num_classes + self.num_super_classes, window_size, window_size // 2, num_layers)
             self.mlps.append(mlp)
         self.overlaping_mlps = nn.ModuleList([])
         num_models = math.ceil((self.total_size - self.window_size // 2) / self.window_size) + 1
@@ -479,7 +479,7 @@ class WindowedMLP(nn.Module):
                 window_size = (self.total_size - self.window_size // 2) % self.window_size
             else:
                 window_size = self.window_size
-            mlp = MLP(window_size + self.num_classes + self.num_super_classes, window_size, window_size, num_layers)
+            mlp = MLP(window_size + self.num_classes + self.num_super_classes, window_size, window_size // 2, num_layers)
             self.overlaping_mlps.append(mlp)
 
     def forward(self, genotypes, labels, super_labels):
