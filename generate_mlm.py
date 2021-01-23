@@ -3,6 +3,7 @@ import math
 import os
 import random
 
+import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 
@@ -22,8 +23,8 @@ parser.add_argument('--data-name', type=str, default=None,
                     help='name added as prefix to file where generated samples will be stored')
 parser.add_argument('-d', '--synthetic-dir', type=str, default='synthetic-data',
                     help='path to the directory where the generated samples will be stored')
-parser.add_argument('-g', '--gpu', action='store_true',
-                    help='use gpu (only supports single gpu)')
+parser.add_argument('-g', '--gpu', type=int, default=-1,
+                    help='index of gpu to use (only supports single gpu), -1 indicates cpu')
 parser.add_argument('--seed', type=int, default=None,
                     help='random seed for reproducibility')
 parser.add_argument('-n', '--num-samples', type=int, default=100,
@@ -41,7 +42,17 @@ def generate(num_passes, model, label, super_label, maf, batch_size, device):
     labels = label.repeat(batch_size).to(device)
     super_labels = super_label.repeat(batch_size).to(device)
     maf = maf.to(device)
-    for j in range(num_passes):
+    # prime pump
+    maf_weights = maf.clone()
+    maf_weights[maf_weights == 0] = 1
+    maf_weights[maf_weights < .01] = .01
+    sampling_weight = np.ones(genotypes.shape[1]) - np.log(maf_weights.cpu().numpy())
+    sampling_probs = (1. / np.sum(sampling_weight)) * sampling_weight
+    for k in range(genotypes.shape[0]):
+        selected_idx = np.random.choice(genotypes.shape[1], genotypes.shape[1] // num_passes, p=sampling_probs)
+        selected_idx = torch.LongTensor(selected_idx.tolist()).to(device)
+        genotypes[k, selected_idx] = torch.bernoulli(maf[selected_idx]) * 2 - 1
+    for j in range(1, num_passes):
         num_selected = genotypes.shape[1] // num_passes
         if j == num_passes - 1:
             num_selected += genotypes.shape[1] % num_passes

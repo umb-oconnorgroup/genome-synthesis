@@ -15,8 +15,8 @@ def save_checkpoint(state, is_best, chromosome, name_prefix, dir_path):
         shutil.copyfile(file_path, best_path)
 
 def get_device(args: ArgumentParser) -> torch.device:
-    if args.gpu:
-        return torch.device('cuda:0')
+    if args.gpu >= 0:
+        return torch.device('cuda:{}'.format(args.gpu))
     else:
         return torch.device('cpu')
 

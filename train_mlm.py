@@ -31,8 +31,8 @@ parser.add_argument('--model-dir', type=str, default='models',
                     help='path to directory where model checkpoint will be saved')
 parser.add_argument('-r', '--resume_path', type=str, default=None,
                     help='path to model from which you would like to resume')
-parser.add_argument('-g', '--gpu', action='store_true',
-                    help='use gpu (only supports single gpu)')
+parser.add_argument('-g', '--gpu', type=int, default=-1,
+                    help='index of gpu to use (only supports single gpu), -1 indicates cpu')
 parser.add_argument('-e', '--epochs', type=int, default=50,
                     help='number of training epochs to run')
 # parser.add_argument('--hidden', type=int, default=128,
