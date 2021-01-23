@@ -55,7 +55,7 @@ parser.add_argument('-v', '--validate', action='store_true',
                     help='only evaluate model on validation set')
 parser.add_argument('-p', '--print-freq', default=10, type=int,
                     help='print frequency')
-parser.add_argument('--save-freq', default=10, type=int,
+parser.add_argument('--save-freq', default=5, type=int,
                     help='save weights every how many epochs')
 
 best_loss = np.inf
