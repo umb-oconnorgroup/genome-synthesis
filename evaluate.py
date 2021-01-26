@@ -31,8 +31,23 @@ COLOR_PROGRESSION = {
 }
 SYNTHETIC_COLOR = 'black'
 SHAPE_PROGRESSION = ['o', 's', 'D', 'P', 'X', 'p', '*']
-SCATTERPLOT_SIZE = 4
+SCATTERPLOT_SIZE = 3
+SCATTERPLOT_ALPHA = .5
 FIGURE_DPI = 500
+LEGEND_X_COORDINATES = {
+    'EAS': 1.22,
+    'EUR': 1.02,
+    'AFR': 1.02,
+    'AMR': 1.22,
+    'SAS': 1.42
+}
+LEGEND_Y_COORDINATES = {
+    'EAS': 0.5,
+    'EUR': 0.5,
+    'AFR': 1.0,
+    'AMR': 1.0,
+    'SAS': 0.5
+}
 
 
 def pca(synthetic_population_code, synthetic_genotypes, reference_genotypes, reference_samples, classification_map, class_hierarchy_map, n_components=10):
@@ -46,22 +61,24 @@ def pca(synthetic_population_code, synthetic_genotypes, reference_genotypes, ref
     plt.xlabel('PC1 ({:.1f}%)'.format(pca_algorithm.explained_variance_ratio_[0] * 100))
     plt.ylabel('PC2 ({:.1f}%)'.format(pca_algorithm.explained_variance_ratio_[1] * 100))
 
-    synthetic_marker = 'o'
-
     reference_population_labels = [classification_map.loc[sample]['population'] for sample in reference_samples]
     super_population_groups = class_hierarchy_map.groupby('Super Population Code').groups
 
     for super_population in super_population_groups:
+        handles = []
         for population, color, marker in zip(super_population_groups[super_population], COLOR_PROGRESSION[SUPERPOPULATION_COLORS[super_population]], SHAPE_PROGRESSION):
-            if population == synthetic_population_code:
-                synthetic_marker = marker
             indices = [j for i in range(len(reference_population_labels)) if reference_population_labels[i] == population for j in (2 * i, 2 * i + 1)]
             filtered_pc_data = reference_principle_components[indices]
-            plt.scatter(filtered_pc_data[:, 0], filtered_pc_data[:, 1], s=SCATTERPLOT_SIZE, c=color, marker=marker, label=population)
+            dots = plt.scatter(filtered_pc_data[:, 0], filtered_pc_data[:, 1], s=SCATTERPLOT_SIZE, c=color, marker=marker, alpha=SCATTERPLOT_ALPHA, label=population)
+            handles.append(dots)
+            if population == synthetic_population_code:
+                dots = plt.scatter(synthetic_principle_components[:, 0], synthetic_principle_components[:, 1], s=SCATTERPLOT_SIZE, c=SYNTHETIC_COLOR, marker=marker, alpha=SCATTERPLOT_ALPHA, label='Synthetic\n{}'.format(synthetic_population_code))
+                handles.append(dots)
+        # legend = plt.legend(handles=handles, title=super_population, bbox_to_anchor=(1.05, 1.0), loc='upper left')
+        legend = plt.legend(handles=handles, title=super_population, bbox_to_anchor=(LEGEND_X_COORDINATES[super_population], LEGEND_Y_COORDINATES[super_population]), loc='upper left')
+        plt.gca().add_artist(legend)
 
-    plt.scatter(synthetic_principle_components[:, 0], synthetic_principle_components[:, 1], s=SCATTERPLOT_SIZE, c=SYNTHETIC_COLOR, marker=synthetic_marker, label='Synthetic\n{}'.format(synthetic_population_code))
-
-    plt.legend(bbox_to_anchor=(1.05, 1.0), loc='upper left')
+    # plt.legend(bbox_to_anchor=(1.05, 1.0), loc='upper left')
     plt.savefig(os.path.join(FIGURES_DIR, '{}.pca.png'.format(synthetic_population_code)), dpi=FIGURE_DPI, bbox_inches='tight')
 
     return synthetic_principle_components, reference_principle_components
