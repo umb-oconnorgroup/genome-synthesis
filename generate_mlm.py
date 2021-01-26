@@ -49,7 +49,7 @@ def generate(num_passes, model, label, super_label, maf, batch_size, device):
     sampling_weight = np.ones(genotypes.shape[1]) - np.log(maf_weights.cpu().numpy())
     sampling_probs = (1. / np.sum(sampling_weight)) * sampling_weight
     for k in range(genotypes.shape[0]):
-        selected_idx = np.random.choice(genotypes.shape[1], genotypes.shape[1] // num_passes, p=sampling_probs)
+        selected_idx = np.random.choice(genotypes.shape[1], genotypes.shape[1] // num_passes, p=sampling_probs, replace=False)
         selected_idx = torch.LongTensor(selected_idx.tolist()).to(device)
         genotypes[k, selected_idx] = torch.bernoulli(maf[selected_idx]) * 2 - 1
     for j in range(1, num_passes):
