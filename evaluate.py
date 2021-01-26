@@ -32,7 +32,7 @@ COLOR_PROGRESSION = {
 SYNTHETIC_COLOR = 'black'
 SHAPE_PROGRESSION = ['o', 's', 'D', 'P', 'X', 'p', '*']
 SCATTERPLOT_SIZE = 3
-SCATTERPLOT_ALPHA = .5
+SCATTERPLOT_ALPHA = .75
 FIGURE_DPI = 500
 LEGEND_X_COORDINATES = {
     'EAS': 1.22,
@@ -54,7 +54,8 @@ def pca(synthetic_population_code, synthetic_genotypes, reference_genotypes, ref
     pca_algorithm = PCA(n_components=n_components)
     reference_data = reference_genotypes.reshape(reference_genotypes.shape[0], -1).transpose()
     synthetic_data = synthetic_genotypes.reshape(synthetic_genotypes.shape[0], -1).transpose()
-    reference_principle_components = pca_algorithm.fit_transform(reference_data)
+    pca_algorithm.fit(np.concatenate((reference_data, synthetic_data), axis=0))
+    reference_principle_components = pca_algorithm.transform(reference_data)
     synthetic_principle_components = pca_algorithm.transform(synthetic_data)
 
     plt.title('PCA')
