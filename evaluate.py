@@ -2,6 +2,7 @@ import sys
 import os
 
 import allel
+import matplotlib
 from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
@@ -108,8 +109,81 @@ def run_umap(synthetic_population_code, synthetic_principle_components, referenc
     return synthetic_umap_projection, reference_umap_projection
 
 
-def sfs():
-    pass
+def sfs(synthetic_population_code, synthetic_genotypes, reference_genotypes, reference_samples, classification_map, class_hierarchy_map):
+    reference_population_labels = np.array([classification_map.loc[sample]['population'] for sample in reference_samples])
+    super_population_groups = class_hierarchy_map.groupby('Super Population Code').groups
+
+    original_reference_genotypes = reference_genotypes[:, reference_population_labels == synthetic_population_code]
+    super_population = class_hierarchy_map.loc[synthetic_population_code]['Super Population Code']
+    same_super_population_code = super_population_groups[super_population][0] if super_population_groups[super_population][0] != synthetic_population_code else super_population_groups[super_population][1]
+    same_super_population_genotypes = reference_genotypes[:, reference_population_labels == same_super_population_code]
+    super_populations = list(super_population_groups.keys())
+    different_super_population = super_populations[0] if super_populations[0] != super_population else super_populations[1]
+    different_super_population_code = super_population_groups[different_super_population][0]
+    different_super_population_genotypes = reference_genotypes[:, reference_population_labels == different_super_population_code]
+
+    joint_site_frequency_spectrum(synthetic_genotypes, original_reference_genotypes, 'Synthetic {}'.format(synthetic_population_code), synthetic_population_code)
+    joint_site_frequency_spectrum(same_super_population_genotypes, original_reference_genotypes, same_super_population_code, synthetic_population_code)
+    joint_site_frequency_spectrum(different_super_population_genotypes, original_reference_genotypes, different_super_population_code, synthetic_population_code)
+
+
+def joint_site_frequency_spectrum(genotypes1: np.ndarray, genotypes2: np.ndarray, population1: str='population1', population2: str='population2') -> np.ndarray:
+    allele_counts1 = genotypes1.reshape(genotypes1.shape[0], -1).sum(1)
+    allele_counts2 = genotypes2.reshape(genotypes2.shape[0], -1).sum(1)
+    joint_sfs = allel.joint_sfs(allele_counts1, allele_counts2, np.product(genotypes1.shape[1:]), np.product(genotypes2.shape[1:]))
+    ax = plot_joint_sfs(joint_sfs, population1, population2)
+    plt.savefig(os.path.join(FIGURES_DIR, '{}.{}.joint_sfs.png'.format(population1.replace(' ', '_'), population2.replace(' ', '_'))))
+    plt.clf()
+    return joint_sfs / joint_sfs.sum()
+
+
+def plot_joint_sfs(s: np.ndarray, population1: str='population1', population2: str='population2') -> matplotlib.axes.Axes:
+    """Plot a joint site frequency spectrum.
+
+    Parameters
+    ----------
+    s : array_like, int, shape (n_chromosomes_pop1, n_chromosomes_pop2)
+        Joint site frequency spectrum.
+    ax : axes, optional
+        Axes on which to draw. If not provided, a new figure will be created.
+    imshow_kwargs : dict-like
+        Additional keyword arguments, passed through to ax.imshow().
+
+    Returns
+    -------
+    ax : axes
+        The axes on which the plot was drawn.
+
+    """
+
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import LogNorm
+
+    # check inputs
+    s = allel.util.asarray_ndim(s, 2)
+
+    # setup axes
+    w = plt.rcParams['figure.figsize'][0]
+    fig, ax = plt.subplots(figsize=(w, w))
+
+    # set plotting defaults
+    imshow_kwargs = dict()
+    imshow_kwargs.setdefault('cmap', 'jet')
+    imshow_kwargs.setdefault('interpolation', 'none')
+    imshow_kwargs.setdefault('aspect', 'auto')
+    imshow_kwargs.setdefault('norm', LogNorm())
+
+    # plot data
+    pos = ax.imshow(s.T, **imshow_kwargs)
+    fig.colorbar(pos)
+
+    # tidy
+    ax.invert_yaxis()
+    ax.set_title('joint site frequency spectrum')
+    ax.set_xlabel('derived allele count ({})'.format(population1))
+    ax.set_ylabel('derived allele count ({})'.format(population2))
+
+    return ax
 
 
 def main() -> None:
@@ -131,8 +205,14 @@ def main() -> None:
     synthetic_genotypes, synthetic_positions, _, _ = biallelic_variant_filter(synthetic_callset)
     reference_genotypes, reference_positions, _, _ = biallelic_variant_filter(reference_callset)
 
+    # impute missing values with reference allele
+    synthetic_genotypes[synthetic_genotypes < 0] = 0
+    reference_genotypes[reference_genotypes < 0] = 0
+
     synthetic_principle_components, reference_principle_components = run_pca(synthetic_population_code, synthetic_genotypes, reference_genotypes, reference_samples, classification_map, class_hierarchy_map)
     run_umap(synthetic_population_code, synthetic_principle_components, reference_principle_components, reference_samples, classification_map, class_hierarchy_map)
+
+    sfs(synthetic_population_code, synthetic_genotypes, reference_genotypes, reference_samples, classification_map, class_hierarchy_map)
 
 
 if __name__ == '__main__':
