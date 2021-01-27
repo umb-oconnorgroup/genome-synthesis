@@ -1,11 +1,13 @@
-import sys
+import itertools
 import os
+import sys
 
 import allel
 import matplotlib
 from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
+from scipy.spatial.distance import squareform
 from sklearn.decomposition import PCA
 import umap
 
@@ -186,6 +188,154 @@ def plot_joint_sfs(s: np.ndarray, population1: str='population1', population2: s
     return ax
 
 
+def plot_pairwise_ld(m1, m2, colorbar=True, ax=None, imshow_kwargs=None):
+    """Plot a matrix of genotype linkage disequilibrium values between
+    all pairs of variants.
+
+    Parameters
+    ----------
+    m1 : array_like
+        Array of linkage disequilibrium values in condensed form.
+    m2 : array_like
+        Array of linkage disequilibrium values in condensed form.
+    colorbar : bool, optional
+        If True, add a colorbar to the current figure.
+    ax : axes, optional
+        The axes on which to draw. If not provided, a new figure will be
+        created.
+    imshow_kwargs : dict-like, optional
+        Additional keyword arguments passed through to
+        :func:`matplotlib.pyplot.imshow`.
+
+    Returns
+    -------
+    ax : axes
+        The axes on which the plot was drawn.
+
+    """
+
+    import matplotlib.pyplot as plt
+
+    # check inputs
+    m1_square = allel.util.ensure_square(m1)
+    m2_square = allel.util.ensure_square(m2)
+
+    # blank out upper triangle
+    m1_square = np.triu(m1_square)
+    m2_square = np.tril(m2_square)
+    m_square = m1_square + m2_square
+
+    # set up axes
+    if ax is None:
+        # make a square figure with enough pixels to represent each variant
+        x = m_square.shape[0] / plt.rcParams['figure.dpi']
+        x = max(x, plt.rcParams['figure.figsize'][0])
+        fig, ax = plt.subplots(figsize=(x, x))
+        fig.tight_layout(pad=0)
+
+    # setup imshow arguments
+    if imshow_kwargs is None:
+        imshow_kwargs = dict()
+    imshow_kwargs.setdefault('interpolation', 'none')
+    imshow_kwargs.setdefault('cmap', 'Greys')
+    imshow_kwargs.setdefault('vmin', 0)
+    imshow_kwargs.setdefault('vmax', 1)
+
+    # plot as image
+    im = ax.imshow(m_square, **imshow_kwargs)
+
+    # tidy up
+    ax.set_xticks([])
+    ax.set_yticks([])
+    for s in 'bottom', 'right':
+        ax.spines[s].set_visible(False)
+    if colorbar:
+        plt.gcf().colorbar(im, shrink=.5, pad=0)
+
+    return ax
+
+
+def binned_ld(genotypes, positions, window_size, num_bins=20):
+    bins = dict((i, []) for i in range(num_bins))
+    exponent_start = 8
+    base = np.exp(np.log(window_size) / (exponent_start + num_bins))
+
+    def bin_index(pos1, pos2):
+        dist = np.abs(pos2 - pos1)
+        return int(max(np.floor(np.log(dist) / np.log(base) - exponent_start), 0))
+
+    for window_start in range(positions[0], positions[-1], window_size):
+        window_indices = np.logical_and(positions >= window_start, positions < window_start + window_size)
+        window_positions = positions[window_indices]
+        window_gn = genotypes[window_indices]
+
+        if len(window_positions) == 0:
+            continue
+        r = allel.rogers_huff_r(window_gn)
+        r_squared_matrix = squareform(r ** 2)
+
+        for i, j in itertools.combinations(range(len(window_positions)), 2):
+            r_squared = r_squared_matrix[i, j]
+            if np.isnan(r_squared):
+                continue
+            index = bin_index(window_positions[i], window_positions[j])
+            bins[index].append(r_squared)
+
+    sizes = [base ** i for i in range(exponent_start + 1, exponent_start + num_bins + 1)]
+    binned_r_squared = [np.mean(bins[i]) for i in range(num_bins)]
+    return sizes, binned_r_squared
+
+
+def remove_fixed_sites(genotypes, positions):
+    minor_allele_count = genotypes.sum(1)
+    fixed_site_removal_indices = np.logical_and(minor_allele_count != 0, minor_allele_count != genotypes.shape[1] * 2)
+    genotypes = genotypes[fixed_site_removal_indices]
+    positions = positions[fixed_site_removal_indices]
+    return genotypes, positions
+
+
+def ld(synthetic_population_code, synthetic_genotypes, reference_genotypes, synthetic_positions, reference_positions, reference_samples, classification_map, window_size=2e5):
+    window_size = int(window_size)
+    reference_population_labels = np.array([classification_map.loc[sample]['population'] for sample in reference_samples])
+    original_reference_genotypes = reference_genotypes[:, reference_population_labels == synthetic_population_code]
+
+    synthetic_genotypes, synthetic_positions = remove_fixed_sites(allel.GenotypeArray(np.copy(synthetic_genotypes)).to_n_alt(), np.copy(synthetic_positions))
+    reference_genotypes, reference_positions = remove_fixed_sites(allel.GenotypeArray(np.copy(original_reference_genotypes)).to_n_alt(), np.copy(reference_positions))
+
+    # # plot binned ld
+    plt.title('Binned Linkage Disequilibrium')
+    sizes, binned_r_squared = binned_ld(synthetic_genotypes, synthetic_positions, window_size)
+    plt.plot(sizes, binned_r_squared, label='Synthetic {}'.format(synthetic_population_code))
+    sizes, binned_r_squared = binned_ld(reference_genotypes, reference_positions, window_size)
+    plt.plot(sizes, binned_r_squared, label='{}'.format(synthetic_population_code))
+    plt.xlabel('Distance (bp)')
+    plt.ylabel('LD (r squared)')
+    plt.xscale('log')
+    plt.legend()
+    plt.savefig(os.path.join(FIGURES_DIR, '{}.binned_ld.png'.format(synthetic_population_code)))
+    plt.close(plt.gcf())
+
+    # plot pairwise ld
+    np.random.seed(SEED)
+    window_start = np.random.randint(synthetic_positions[0], synthetic_positions[-1] - window_size)
+    synthetic_window_indices = np.logical_and(np.logical_and(synthetic_positions >= window_start, synthetic_positions < window_start + window_size), np.isin(synthetic_positions, reference_positions))
+    reference_window_indices = np.logical_and(np.logical_and(reference_positions >= window_start, reference_positions < window_start + window_size), np.isin(reference_positions, synthetic_positions))
+    synthetic_window_gn = synthetic_genotypes[synthetic_window_indices]
+    reference_window_gn = reference_genotypes[reference_window_indices]
+    synthetic_r = allel.rogers_huff_r(synthetic_window_gn)
+    reference_r = allel.rogers_huff_r(reference_window_gn)
+    synthetic_r_squared_matrix = squareform(synthetic_r ** 2)
+    reference_r_squared_matrix = squareform(reference_r ** 2)
+    ax = plot_pairwise_ld(synthetic_r_squared_matrix, reference_r_squared_matrix, colorbar=True, imshow_kwargs={'cmap': 'cividis'})
+    plt.title('SNP Correlation in {}kb Window'.format(window_size // 1000))
+    plt.savefig(os.path.join(FIGURES_DIR, '{}.pairwise_ld.png'.format(synthetic_population_code)))
+    plt.close(plt.gcf())
+
+
+def ld_pruning():
+    pass
+
+
 def main() -> None:
     np.random.seed(SEED)
 
@@ -213,6 +363,7 @@ def main() -> None:
     run_umap(synthetic_population_code, synthetic_principle_components, reference_principle_components, reference_samples, classification_map, class_hierarchy_map)
 
     sfs(synthetic_population_code, synthetic_genotypes, reference_genotypes, reference_samples, classification_map, class_hierarchy_map)
+    ld(synthetic_population_code, synthetic_genotypes, reference_genotypes, synthetic_positions, reference_positions, reference_samples, classification_map, window_size=5e4)
 
 
 if __name__ == '__main__':
