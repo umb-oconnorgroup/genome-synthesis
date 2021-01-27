@@ -386,11 +386,6 @@ def nearest_neighbor_adversarial_accuracy(synthetic_population_code, synthetic_g
     d_ts = D_ts.min(1)
     d_st = D_st.min(1)
 
-    print(d_tt)
-    print(d_ss)
-    print(d_ts)
-    print(d_st)
-
     AA_true = np.mean(d_ts > d_tt)
     AA_syn = np.mean(d_st > d_ss)
     AA_ts = .5 * (AA_true + AA_syn)
