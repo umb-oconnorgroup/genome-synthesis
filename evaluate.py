@@ -7,7 +7,7 @@ import matplotlib
 from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
-from scipy.spatial.distance import squareform
+from scipy.spatial.distance import cdist, squareform
 from sklearn.decomposition import PCA
 import umap
 
@@ -365,6 +365,41 @@ def population_statistics(synthetic_population_code, synthetic_genotypes, refere
     plt.close(plt.gcf())
 
 
+def nearest_neighbor_adversarial_accuracy(synthetic_population_code, synthetic_genotypes, reference_genotypes, reference_samples, classification_map):
+    reference_population_labels = np.array([classification_map.loc[sample]['population'] for sample in reference_samples])
+    original_reference_genotypes = reference_genotypes[:, reference_population_labels == synthetic_population_code]
+
+    assert(synthetic_genotypes.shape[0] == original_reference_genotypes.shape[0])
+
+    synthetic_data = synthetic_genotypes.reshape(synthetic_genotypes.shape[0], -1).T
+    reference_data = original_reference_genotypes.reshape(original_reference_genotypes.shape[0], -1).T
+
+    D_tt = cdist(reference_data, reference_data)
+    np.fill_diagonal(D_tt, np.inf)
+    D_ss = cdist(synthetic_data, synthetic_data)
+    np.fill_diagonal(D_ss, np.inf)
+    D_ts = cdist(reference_data, synthetic_data)
+    D_st = D_ts.T
+
+    d_tt = D_tt.min(1)
+    d_ss = D_ss.min(1)
+    d_ts = D_ts.min(1)
+    d_st = D_st.min(1)
+
+    print(d_tt)
+    print(d_ss)
+    print(d_ts)
+    print(d_st)
+
+    AA_true = np.mean(d_ts > d_tt)
+    AA_syn = np.mean(d_st > d_ss)
+    AA_ts = .5 * (AA_true + AA_syn)
+
+    print('AA_true: {:.3f}'.format(AA_true))
+    print('AA_syn: {:.3f}'.format(AA_syn))
+    print('AA_ts: {:.3f}'.format(AA_ts))
+
+
 def ld_pruning():
     pass
 
@@ -388,17 +423,18 @@ def main() -> None:
     synthetic_genotypes, synthetic_positions, _, _ = biallelic_variant_filter(synthetic_callset)
     reference_genotypes, reference_positions, _, _ = biallelic_variant_filter(reference_callset)
 
-    population_statistics(synthetic_population_code, synthetic_genotypes, reference_genotypes, synthetic_positions, reference_positions, reference_samples, classification_map)
+    # population_statistics(synthetic_population_code, synthetic_genotypes, reference_genotypes, synthetic_positions, reference_positions, reference_samples, classification_map)
 
     # impute missing values with reference allele
     synthetic_genotypes[synthetic_genotypes < 0] = 0
     reference_genotypes[reference_genotypes < 0] = 0
 
-    synthetic_principle_components, reference_principle_components = run_pca(synthetic_population_code, synthetic_genotypes, reference_genotypes, reference_samples, classification_map, class_hierarchy_map)
-    run_umap(synthetic_population_code, synthetic_principle_components, reference_principle_components, reference_samples, classification_map, class_hierarchy_map)
+    # synthetic_principle_components, reference_principle_components = run_pca(synthetic_population_code, synthetic_genotypes, reference_genotypes, reference_samples, classification_map, class_hierarchy_map)
+    # run_umap(synthetic_population_code, synthetic_principle_components, reference_principle_components, reference_samples, classification_map, class_hierarchy_map)
 
-    sfs(synthetic_population_code, synthetic_genotypes, reference_genotypes, reference_samples, classification_map, class_hierarchy_map)
-    ld(synthetic_population_code, synthetic_genotypes, reference_genotypes, synthetic_positions, reference_positions, reference_samples, classification_map, window_size=5e4)
+    # sfs(synthetic_population_code, synthetic_genotypes, reference_genotypes, reference_samples, classification_map, class_hierarchy_map)
+    # ld(synthetic_population_code, synthetic_genotypes, reference_genotypes, synthetic_positions, reference_positions, reference_samples, classification_map, window_size=5e4)
+    nearest_neighbor_adversarial_accuracy(synthetic_population_code, synthetic_genotypes, reference_genotypes, reference_samples, classification_map)
 
 
 if __name__ == '__main__':
