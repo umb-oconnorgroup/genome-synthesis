@@ -332,6 +332,39 @@ def ld(synthetic_population_code, synthetic_genotypes, reference_genotypes, synt
     plt.close(plt.gcf())
 
 
+def population_statistics(synthetic_population_code, synthetic_genotypes, reference_genotypes, synthetic_positions, reference_positions, reference_samples, classification_map, window_size=2e5):
+    window_size = int(window_size)
+    reference_population_labels = np.array([classification_map.loc[sample]['population'] for sample in reference_samples])
+    original_reference_genotypes = reference_genotypes[:, reference_population_labels == synthetic_population_code]
+
+    synthetic_allele_counts = allel.GenotypeArray(synthetic_genotypes).count_alleles()
+    reference_allele_counts = allel.GenotypeArray(original_reference_genotypes).count_alleles()
+
+    synthetic_pi, _, _, _ = allel.windowed_diversity(synthetic_positions, synthetic_allele_counts, size=window_size)
+    reference_pi, _, _, _ = allel.windowed_diversity(reference_positions, reference_allele_counts, size=window_size)
+
+    plt.title('Nucleotide Diversity Sliding Window Analysis')
+    plt.plot(np.arange(1, len(synthetic_pi) + 1), synthetic_pi, label='Synthetic {}'.format(synthetic_population_code))
+    plt.plot(np.arange(1, len(reference_pi) + 1), reference_pi, label='{}'.format(synthetic_population_code))
+    plt.xlabel('Windows ({}kb)'.format(window_size // 1000))
+    plt.ylabel('Nucleotide Diversity (π)')
+    plt.legend()
+    plt.savefig(os.path.join(FIGURES_DIR, '{}.pi.png'.format(synthetic_population_code)))
+    plt.close(plt.gcf())
+
+    synthetic_D, _, _ = allel.windowed_tajima_d(synthetic_positions, synthetic_allele_counts, size=window_size)
+    reference_D, _, _ = allel.windowed_tajima_d(reference_positions, reference_allele_counts, size=window_size)
+
+    plt.title('Tajima\'s D Sliding Window Analysis')
+    plt.plot(np.arange(1, len(synthetic_D) + 1), synthetic_D, label='Synthetic {}'.format(synthetic_population_code))
+    plt.plot(np.arange(1, len(reference_D) + 1), reference_D, label='{}'.format(synthetic_population_code))
+    plt.xlabel('Windows ({}kb)'.format(window_size // 1000))
+    plt.ylabel('Tajima\'s D')
+    plt.legend()
+    plt.savefig(os.path.join(FIGURES_DIR, '{}.tajima_d.png'.format(synthetic_population_code)))
+    plt.close(plt.gcf())
+
+
 def ld_pruning():
     pass
 
@@ -354,6 +387,8 @@ def main() -> None:
 
     synthetic_genotypes, synthetic_positions, _, _ = biallelic_variant_filter(synthetic_callset)
     reference_genotypes, reference_positions, _, _ = biallelic_variant_filter(reference_callset)
+
+    population_statistics(synthetic_population_code, synthetic_genotypes, reference_genotypes, synthetic_positions, reference_positions, reference_samples, classification_map)
 
     # impute missing values with reference allele
     synthetic_genotypes[synthetic_genotypes < 0] = 0
