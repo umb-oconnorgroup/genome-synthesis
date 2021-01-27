@@ -423,17 +423,17 @@ def main() -> None:
     synthetic_genotypes, synthetic_positions, _, _ = biallelic_variant_filter(synthetic_callset)
     reference_genotypes, reference_positions, _, _ = biallelic_variant_filter(reference_callset)
 
-    # population_statistics(synthetic_population_code, synthetic_genotypes, reference_genotypes, synthetic_positions, reference_positions, reference_samples, classification_map)
+    population_statistics(synthetic_population_code, synthetic_genotypes, reference_genotypes, synthetic_positions, reference_positions, reference_samples, classification_map)
 
     # impute missing values with reference allele
     synthetic_genotypes[synthetic_genotypes < 0] = 0
     reference_genotypes[reference_genotypes < 0] = 0
 
-    # synthetic_principle_components, reference_principle_components = run_pca(synthetic_population_code, synthetic_genotypes, reference_genotypes, reference_samples, classification_map, class_hierarchy_map)
-    # run_umap(synthetic_population_code, synthetic_principle_components, reference_principle_components, reference_samples, classification_map, class_hierarchy_map)
+    synthetic_principle_components, reference_principle_components = run_pca(synthetic_population_code, synthetic_genotypes, reference_genotypes, reference_samples, classification_map, class_hierarchy_map)
+    run_umap(synthetic_population_code, synthetic_principle_components, reference_principle_components, reference_samples, classification_map, class_hierarchy_map)
 
-    # sfs(synthetic_population_code, synthetic_genotypes, reference_genotypes, reference_samples, classification_map, class_hierarchy_map)
-    # ld(synthetic_population_code, synthetic_genotypes, reference_genotypes, synthetic_positions, reference_positions, reference_samples, classification_map, window_size=5e4)
+    sfs(synthetic_population_code, synthetic_genotypes, reference_genotypes, reference_samples, classification_map, class_hierarchy_map)
+    ld(synthetic_population_code, synthetic_genotypes, reference_genotypes, synthetic_positions, reference_positions, reference_samples, classification_map, window_size=5e4)
     nearest_neighbor_adversarial_accuracy(synthetic_population_code, synthetic_genotypes, reference_genotypes, reference_samples, classification_map)
 
 
