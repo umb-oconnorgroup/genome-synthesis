@@ -25,14 +25,14 @@ SUPERPOPULATION_COLORS = {
     'SAS': 'purple'
     }
 COLOR_PROGRESSION = {
-    'green': ['green', 'lawngreen', 'darkturquoise', 'darkolivegreen', 'forestgreen'],
-    'blue': ['blue', 'cornflowerblue', 'azure', 'navy', 'lightsteelblue'],
+    'green': ['green', 'lawngreen', 'springgreen', 'darkolivegreen', 'forestgreen'],
+    'blue': ['blue', 'cornflowerblue', 'darkturquoise', 'navy', 'lightsteelblue'],
     'red': ['red', 'tomato', 'crimson', 'darkorange', 'firebrick', 'indianred', 'coral'],
-    'yellow': ['yellow', 'seashell', 'lightgoldenrodyellow', 'darkkhaki', 'gold'],
-    'purple': ['purple', 'lavender', 'darkviolet', 'darkmagenta', 'orchid']
+    'yellow': ['goldenrod', 'peru', 'tan', 'darkkhaki', 'gold'],
+    'purple': ['purple', 'fuchsia', 'darkviolet', 'hotpink', 'orchid']
 }
 SYNTHETIC_COLOR = 'black'
-SHAPE_PROGRESSION = ['o', 's', 'D', 'P', 'X', 'p', '*']
+SHAPE_PROGRESSION = ['o', 's', 'D', 'p', '*', 'P', 'X']
 SCATTERPLOT_SIZE = 3
 SCATTERPLOT_ALPHA = .75
 FIGURE_DPI = 500
@@ -70,7 +70,7 @@ def scatterplot(synthetic_population_code, synthetic_data, reference_data, refer
             if population == synthetic_population_code:
                 dots = plt.scatter(synthetic_data[:, 0], synthetic_data[:, 1], s=SCATTERPLOT_SIZE, c=SYNTHETIC_COLOR, marker=marker, alpha=SCATTERPLOT_ALPHA, label='Synthetic\n{}'.format(synthetic_population_code))
                 handles.append(dots)
-        legend = plt.legend(handles=handles, title=super_population, bbox_to_anchor=(LEGEND_X_COORDINATES[super_population], LEGEND_Y_COORDINATES[super_population]), loc='upper left')
+        legend = plt.legend(handles=handles, markerscale=3, title=super_population, bbox_to_anchor=(LEGEND_X_COORDINATES[super_population], LEGEND_Y_COORDINATES[super_population]), loc='upper left')
         plt.gca().add_artist(legend)
 
     plt.savefig(fig_path, dpi=FIGURE_DPI, bbox_inches='tight')
