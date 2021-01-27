@@ -31,38 +31,72 @@ parser.add_argument('-n', '--num-samples', type=int, default=100,
                     help='number of diploids to generate')
 parser.add_argument('-b', '--batch-size', type=int, default=128,
                     help='training data batch size')
-parser.add_argument('--passes', type=int, default=50,
+parser.add_argument('--passes', type=int, default=100,
                     help='training data batch size')
-parser.add_argument('--diversity-multiplier', type=int, default=3,
+parser.add_argument('--diversity-multiplier', type=int, default=1,
                     help='the most diverse num-samples will be chosen from num-samples multiplied by this number')
+parser.add_argument('--nucleus-threshold', type=float, default=.7,
+                    help='threshold for nucleus sampling')
 
 
-def generate(num_passes, model, label, super_label, maf, batch_size, device):
+def generate(num_passes, model, label, super_label, maf, batch_size, nucleus_threshold, device):
     genotypes = torch.zeros(batch_size, model.total_size).to(device)
     labels = label.repeat(batch_size).to(device)
     super_labels = super_label.repeat(batch_size).to(device)
     maf = maf.to(device)
-    # prime pump
-    maf_weights = maf.clone()
-    maf_weights[maf_weights == 0] = 1
-    maf_weights[maf_weights < .01] = .01
-    sampling_weight = np.ones(genotypes.shape[1]) - np.log(maf_weights.cpu().numpy())
-    sampling_probs = (1. / np.sum(sampling_weight)) * sampling_weight
-    for k in range(genotypes.shape[0]):
-        selected_idx = np.random.choice(genotypes.shape[1], genotypes.shape[1] // num_passes, p=sampling_probs, replace=False)
-        selected_idx = torch.LongTensor(selected_idx.tolist()).to(device)
-        genotypes[k, selected_idx] = torch.bernoulli(maf[selected_idx]) * 2 - 1
-    for j in range(1, num_passes):
-        num_selected = genotypes.shape[1] // num_passes
+    logprob_minor = maf.log()
+    logprob_major = (1 - maf).log()
+    # set fixed sites
+    genotypes[:, maf == 0] = -1
+    genotypes[:, maf == 1] = 1
+    num_variant = int((genotypes[0] == 0).sum().item())
+    for j in range(0, num_passes):
+        mutual_information_diversity_coefficient = math.log(1 - (j / (num_passes * (math.e / (math.e - 1))))) + 1
+        num_selected = num_variant // num_passes
         if j == num_passes - 1:
-            num_selected += genotypes.shape[1] % num_passes
+            num_selected += num_variant % num_passes
         logits = model(genotypes, labels, super_labels).squeeze(-1)
-        # zero out logits of already selected indices
-        logits[genotypes != 0] = 0
-        selected_indices = logits.abs().argsort(descending=True)[:, :num_selected]
-        for k, selected_idx in enumerate(selected_indices):
+        mutual_information_minor = logits.sigmoid().log() - mutual_information_diversity_coefficient * logprob_minor
+        mutual_information_major = (1 - logits.sigmoid()).log() - mutual_information_diversity_coefficient * logprob_major
+        max_mutual_information = torch.max(mutual_information_minor, mutual_information_major)
+        max_mutual_information[genotypes != 0] = -np.inf
+        sampling_probs = max_mutual_information.softmax(1)
+        descending_probs, descending_indices = sampling_probs.sort(descending=True)
+        probs_cumsum = descending_probs.cumsum(1)
+        for k, (probs_cumsum_k, descending_idx, sampling_probs_k) in enumerate(zip(probs_cumsum, descending_indices, sampling_probs)):
+            selection_range = (probs_cumsum_k > nucleus_threshold).nonzero(as_tuple=False)[0].item() + 1
+            selection_range = max(selection_range, num_selected)
+            sampling_probs_k[descending_idx[selection_range:]] = 0
+            selected_idx = torch.multinomial(sampling_probs_k, num_selected, replacement=False)
             genotypes[k, selected_idx] = logits[k, selected_idx].sign()
     return genotypes
+
+# def generate(num_passes, model, label, super_label, maf, batch_size, device):
+#     genotypes = torch.zeros(batch_size, model.total_size).to(device)
+#     labels = label.repeat(batch_size).to(device)
+#     super_labels = super_label.repeat(batch_size).to(device)
+#     maf = maf.to(device)
+#     # prime pump
+#     maf_weights = maf.clone()
+#     maf_weights[maf_weights == 0] = 1
+#     maf_weights[maf_weights < .01] = .01
+#     sampling_weight = np.ones(genotypes.shape[1]) - np.log(maf_weights.cpu().numpy())
+#     sampling_probs = (1. / np.sum(sampling_weight)) * sampling_weight
+#     for k in range(genotypes.shape[0]):
+#         selected_idx = np.random.choice(genotypes.shape[1], genotypes.shape[1] // num_passes, p=sampling_probs, replace=False)
+#         selected_idx = torch.LongTensor(selected_idx.tolist()).to(device)
+#         genotypes[k, selected_idx] = torch.bernoulli(maf[selected_idx]) * 2 - 1
+#     for j in range(1, num_passes):
+#         num_selected = genotypes.shape[1] // num_passes
+#         if j == num_passes - 1:
+#             num_selected += genotypes.shape[1] % num_passes
+#         logits = model(genotypes, labels, super_labels).squeeze(-1)
+#         # zero out logits of already selected indices
+#         logits[genotypes != 0] = 0
+#         selected_indices = logits.abs().argsort(descending=True)[:, :num_selected]
+#         for k, selected_idx in enumerate(selected_indices):
+#             genotypes[k, selected_idx] = logits[k, selected_idx].sign()
+#     return genotypes
 
 
 def main() -> None:
@@ -113,7 +147,7 @@ def main() -> None:
                 batch_size = num_haploids % args.batch_size
             else:
                 batch_size = args.batch_size
-            genotypes.append(generate(args.passes, model, label, super_label, maf, batch_size, device))
+            genotypes.append(generate(args.passes, model, label, super_label, maf, batch_size, args.nucleus_threshold, device))
 
         genotypes = torch.cat(genotypes, 0)
 
