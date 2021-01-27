@@ -216,7 +216,7 @@ def validate(loader: DataLoader, model: nn.Module, criterion: Callable, num_clas
         for i, (genotypes, labels, super_labels) in enumerate(loader):
 
             ### Mask for Masked Language Modeling
-            mask_num = int((torch.distributions.beta.Beta(1.7, 3).sample() * genotypes.shape[1]).round().item())
+            mask_num = torch.randint(1, genotypes.shape[1], (1,)).item()
             mask_scores = torch.rand(genotypes.shape[1])
             mask_indices = mask_scores.argsort(descending=True)[:mask_num]
             masked_genotypes = genotypes[:, mask_indices].reshape(-1)
