@@ -37,9 +37,11 @@ parser.add_argument('--diversity-multiplier', type=int, default=1,
                     help='the most diverse num-samples will be chosen from num-samples multiplied by this number')
 parser.add_argument('--nucleus-threshold', type=float, default=.7,
                     help='threshold for nucleus sampling')
+parser.add_argument('--mmi-coef', type=float, default=1.0,
+                    help='initial coefficient of logprob in mmi calculation')
 
 
-def generate(num_passes, model, label, super_label, maf, batch_size, nucleus_threshold, device):
+def generate(num_passes, model, label, super_label, maf, batch_size, nucleus_threshold, mmi_coef, device):
     genotypes = torch.zeros(batch_size, model.total_size).to(device)
     labels = label.repeat(batch_size).to(device)
     super_labels = super_label.repeat(batch_size).to(device)
@@ -51,7 +53,7 @@ def generate(num_passes, model, label, super_label, maf, batch_size, nucleus_thr
     genotypes[:, maf == 1] = 1
     num_variant = int((genotypes[0] == 0).sum().item())
     for j in range(0, num_passes):
-        mutual_information_diversity_coefficient = math.log(1 - (j / (num_passes * (math.e / (math.e - 1))))) + 1
+        mutual_information_diversity_coefficient = mmi_coef * (math.log(1 - (j / (num_passes * (math.e / (math.e - 1))))) + 1)
         num_selected = num_variant // num_passes
         if j == num_passes - 1:
             num_selected += num_variant % num_passes
@@ -147,7 +149,7 @@ def main() -> None:
                 batch_size = num_haploids % args.batch_size
             else:
                 batch_size = args.batch_size
-            genotypes.append(generate(args.passes, model, label, super_label, maf, batch_size, args.nucleus_threshold, device))
+            genotypes.append(generate(args.passes, model, label, super_label, maf, batch_size, args.nucleus_threshold, args.mmi_coef, device))
 
         genotypes = torch.cat(genotypes, 0)
 
