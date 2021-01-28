@@ -67,8 +67,8 @@ def generate(num_passes, model, label, super_label, maf, batch_size, sampling_te
         decayed_sampling_temp = log_decay(i, num_passes, sampling_temp)
         mask_size = math.ceil(num_variant * (num_passes - i) / num_passes)
         # determine where to mask
-        ascending_mmi, ascending_indices = max_mutual_information.sort()
-        masked_indices = ascending_indices[:mask_size]
+        ascending_mmi, ascending_indices = max_mutual_information.sort(descending=False)
+        masked_indices = ascending_indices[:, :mask_size]
         # mask genotypes
         for j, masked_idx in enumerate(masked_indices):
             genotypes[j, masked_idx] = 0
