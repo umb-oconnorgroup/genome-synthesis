@@ -32,7 +32,7 @@ parser.add_argument('-n', '--num-samples', type=int, default=100,
 parser.add_argument('-b', '--batch-size', type=int, default=128,
                     help='training data batch size')
 parser.add_argument('--passes', type=int, default=100,
-                    help='training data batch size')
+                    help='number of passes to generate the data')
 parser.add_argument('--diversity-multiplier', type=int, default=1,
                     help='the most diverse num-samples will be chosen from num-samples multiplied by this number')
 parser.add_argument('--sampling-temp', type=float, default=2.0,
