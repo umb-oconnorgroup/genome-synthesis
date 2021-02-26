@@ -37,7 +37,7 @@ parser.add_argument('-e', '--epochs', type=int, default=50,
                     help='number of training epochs to run')
 # parser.add_argument('--hidden', type=int, default=128,
 #                     help='hidden dimension size')
-parser.add_argument('-l', '--layers', type=int, default=4,
+parser.add_argument('-l', '--layers', type=int, default=2,
                     help='number of layers')
 parser.add_argument('-s', '--seed', type=int, default=None,
                     help='random seed for reproducibility')
