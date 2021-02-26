@@ -53,15 +53,18 @@ def generate(num_passes, model, label, super_label, maf, batch_size, sampling_te
     logprob_minor = maf.log()
     logprob_major = (1 - maf).log()
     # set fixed sites
-    genotypes[:, maf == 0] = -1
-    genotypes[:, maf == 1] = 1
+    # genotypes[:, maf == 0] = -1
+    # genotypes[:, maf == 1] = 1
     # define variant site indices
     variant_site_indices = genotypes[0] == 0
-    fixed_site_indices = genotypes[0] != 0
-    num_variant = int(variant_site_indices.sum().item())
+    # fixed_site_indices = genotypes[0] != 0
+    # num_variant = int(variant_site_indices.sum().item())
+    #
+    num_variant = genotypes.shape[1]
+    #
     # init max mutual information
     max_mutual_information = torch.zeros(batch_size, model.total_size).to(device)
-    max_mutual_information[:, fixed_site_indices] = np.inf
+    # max_mutual_information[:, fixed_site_indices] = np.inf
     for i in range(0, num_passes):
         decayed_rare_variant_coef = log_decay(i, num_passes, rare_variant_coef)
         decayed_sampling_temp = log_decay(i, num_passes, sampling_temp)
@@ -79,6 +82,16 @@ def generate(num_passes, model, label, super_label, maf, batch_size, sampling_te
         for j, masked_idx in enumerate(masked_indices):
             max_mutual_information[j, masked_idx] = torch.max(mutual_information_minor[j, masked_idx], mutual_information_major[j, masked_idx])
             genotypes[j, masked_idx] = torch.bernoulli((logits[j, masked_idx] * (1. / decayed_sampling_temp)).sigmoid()) * 2 - 1
+    ###
+    new_maf = (.5 * (genotypes + 1)).mean(0)
+    # new_maf = logits[0].sigmoid()
+    print((new_maf - maf).abs().sum())
+    print((new_maf - maf).abs().sort(descending=True)[0][:20])
+    print((new_maf - maf).abs().sort(descending=True)[1][:20])
+    indices = (new_maf - maf).abs().sort(descending=True)[1][:20]
+    print(new_maf[indices])
+    print(maf[indices])
+    ###
     return genotypes
 
 
@@ -130,6 +143,10 @@ def main() -> None:
                 batch_size = num_haploids % args.batch_size
             else:
                 batch_size = args.batch_size
+            ##
+            # print((maf - checkpoint['maf'][label_encoder.transform(['CEU'])[0]]).abs().sum())
+            # print((maf - checkpoint['maf'][label_encoder.transform(['CEU'])[0]]).abs().sort(descending=True)[0][:20])
+            ##
             genotypes.append(generate(args.passes, model, label, super_label, maf, batch_size, args.sampling_temp, args.rare_variant_coef, device))
 
         genotypes = torch.cat(genotypes, 0)

@@ -47,7 +47,7 @@ parser.add_argument('-b', '--batch-size', type=int, default=32,
                     help='training data batch size')
 parser.add_argument('--learning-rate', default=0.001, type=float,
                     help='initial learning rate')
-parser.add_argument('--minor-coefficient', default=3.0, type=float,
+parser.add_argument('--minor-coefficient', default=1.0, type=float,
                     help='coefficient for updating weights linked to snps with nonzero maf')
 parser.add_argument('-t', '--validation-split', default=0.2, type=float,
                     help='portion of the data used for validation')
